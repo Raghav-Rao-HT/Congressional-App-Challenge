@@ -1,0 +1,210 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/*
+ * Design tokens. Surfaces, text and status colors are CSS variables so the
+ * whole app is themed from one place; components use the semantic utilities
+ * (bg-surface, text-fg, border-line, ...). The app is light-only: the pet art
+ * (a black gorilla, transparent backgrounds) is drawn for a white page.
+ */
+:root {
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f5f5f7;
+  --fg: #1a1a2e;
+  --muted: #5b5b78;
+  --line: #e5e5ea;
+
+  --ok: #0f7a4f;
+  --ok-soft: #e3f8ee;
+  --warn: #965a00;
+  --warn-soft: #fff1d6;
+  --bad: #b3261e;
+  --bad-soft: #fde8e6;
+  --info: #3a4bd4;
+  --info-soft: #e7eaff;
+  --violet: #6b3fd1;
+  --violet-soft: #f0e8ff;
+
+  --shadow-color: 26 26 46;
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+
+  --shadow-card: 0 1px 2px rgb(var(--shadow-color) / 0.05), 0 4px 16px rgb(var(--shadow-color) / 0.06);
+  --shadow-lift: 0 2px 4px rgb(var(--shadow-color) / 0.06), 0 12px 32px rgb(var(--shadow-color) / 0.12);
+}
+
+@theme static {
+  --color-brand-50: #f1f0ff;
+  --color-brand-100: #e6e4ff;
+  --color-brand-200: #d0ccff;
+  --color-brand-300: #b1a9ff;
+  --color-brand-400: #8f82ff;
+  --color-brand-500: #6f5eff;
+  --color-brand-600: #5a46f0;
+  --color-brand-700: #4a38d3;
+  --color-brand-800: #3d2fa8;
+  --color-brand-900: #332b84;
+
+  --color-coral-400: #ff8a6b;
+  --color-coral-500: #ff6f4d;
+
+  --radius-card: 1.25rem;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--fg);
+    font-family: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 0.375rem;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-brand-500) 30%, transparent);
+  }
+}
+
+/*
+ * Leaflet: match the map chrome to the theme.
+ * Everything is scoped under .leaflet-container so these rules out-rank
+ * Leaflet's own stylesheet, which is loaded after this one.
+ */
+.leaflet-container {
+  font-family: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--surface-2);
+}
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-container .leaflet-popup-tip {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 2px 4px rgb(var(--shadow-color) / 0.06), 0 12px 32px rgb(var(--shadow-color) / 0.12);
+}
+.leaflet-container .leaflet-popup-content-wrapper {
+  border-radius: 1rem;
+}
+.leaflet-container .leaflet-popup-content {
+  margin: 1rem;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--muted);
+}
+.leaflet-container .leaflet-tooltip {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(var(--shadow-color) / 0.05), 0 4px 16px rgb(var(--shadow-color) / 0.06);
+}
+.leaflet-container .leaflet-tooltip-right::before {
+  border-right-color: var(--surface);
+}
+.leaflet-container .leaflet-bar a {
+  background-color: var(--surface);
+  color: var(--fg);
+  border-bottom-color: var(--line);
+}
+.leaflet-container .leaflet-bar a:hover {
+  background-color: var(--surface-2);
+}
+.leaflet-container .leaflet-control-attribution.leaflet-control {
+  background: color-mix(in oklab, var(--surface) 82%, transparent);
+  color: var(--muted);
+}
+.leaflet-container .leaflet-control-attribution.leaflet-control a {
+  color: var(--info);
+}
+/* Island page: the island and its pets float, clouds and waves drift, stars twinkle. */
+@keyframes island-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes island-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+@keyframes island-drift {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(36px);
+  }
+}
+@keyframes island-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.island-float {
+  animation: island-float 7s ease-in-out infinite;
+}
+.island-bob {
+  animation: island-bob 2.6s ease-in-out infinite;
+}
+.island-drift {
+  animation: island-drift 16s ease-in-out infinite;
+}
+.island-twinkle {
+  animation: island-twinkle 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
