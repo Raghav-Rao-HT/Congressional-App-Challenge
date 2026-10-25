@@ -69,7 +69,8 @@ service cloud.firestore {
     // accountType and uid are immutable after creation so a user can't
     // promote themselves (e.g. to 'admin') via a later update. Phase 4
     // exception: an admin may touch only the orgId field on someone else's
-    // profile, to mark an org officer's org as approved. Phase 5 exception:
+    // profile, to mark an org officer's org as approved, and leaderboardHidden,
+    // to take a member off the leaderboard. Phase 5 exception:
     // any approved org officer may touch only the gamification aggregate
     // fields (see isAnyApprovedOfficer above).
     match /users/{uid} {
@@ -78,7 +79,7 @@ service cloud.firestore {
       allow update: if (isOwner(uid) &&
         request.resource.data.accountType == resource.data.accountType &&
         request.resource.data.uid == resource.data.uid) ||
-        (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgId'])) ||
+        (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgId', 'leaderboardHidden'])) ||
         (isAnyApprovedOfficer() && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['totalPoints', 'totalHoursApproved', 'currentStreakWeeks', 'longestStreakWeeks', 'lastServiceDate']));
       allow delete: if false;
@@ -191,9 +192,14 @@ service cloud.firestore {
     // the query filters on, so a default would count as 'public' and let any
     // query without an audience filter list members-only posts. Posts that
     // predate the audience field must be backfilled with audience: 'public'.
+    //
+    // Admins moderate events: they can read every post (including members-only
+    // ones) and delete a post together with its RSVPs. isAdmin() comes first in
+    // each check so it settles the request before any get() of a post that may
+    // already be deleted.
     match /bulletinPosts/{postId} {
       allow read: if isSignedIn() &&
-        (resource.data.audience == 'public' || isApprovedMember(resource.data.orgId));
+        (isAdmin() || resource.data.audience == 'public' || isApprovedMember(resource.data.orgId));
       allow create: if isOwner(request.resource.data.authorUid) &&
         request.resource.data.status == 'open' &&
         request.resource.data.approvedCount == 0 &&
@@ -203,7 +209,7 @@ service cloud.firestore {
           (request.resource.data.audience == 'members' && request.resource.data.authorType == 'org'));
       allow update: if isOwner(resource.data.authorUid) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount', 'status']);
-      allow delete: if false;
+      allow delete: if isAdmin();
 
       // RSVPs: a person asks to join (always 'pending'), the poster approves
       // or declines. The poster can't RSVP to their own post, and for
@@ -216,7 +222,7 @@ service cloud.firestore {
         }
 
         allow read: if isSignedIn() &&
-          (isOwner(rsvpUid) || isOwner(post().authorUid) || resource.data.status == 'approved');
+          (isAdmin() || isOwner(rsvpUid) || isOwner(post().authorUid) || resource.data.status == 'approved');
         allow create: if isOwner(rsvpUid) &&
           request.resource.data.uid == rsvpUid &&
           request.resource.data.status == 'pending' &&
@@ -227,7 +233,8 @@ service cloud.firestore {
         allow update: if isOwner(post().authorUid) &&
           request.resource.data.status in ['approved', 'declined'] &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt']);
-        allow delete: if (isOwner(rsvpUid) && resource.data.status != 'approved') ||
+        allow delete: if isAdmin() ||
+          (isOwner(rsvpUid) && resource.data.status != 'approved') ||
           isOwner(post().authorUid);
       }
     }

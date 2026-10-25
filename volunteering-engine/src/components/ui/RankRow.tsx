@@ -9,42 +9,56 @@ const medals: Record<number, string> = {
 }
 
 // One line of a ranking: medal/number, name, and a score on the right.
+// `rank` is null for an entry that isn't ranked (shown as a dash), `muted`
+// dims it, `action` adds controls (e.g. an admin's Remove button) after the
+// score, and `footer` adds a line underneath (e.g. a confirmation).
 export function RankRow({
   rank,
   name,
   meta,
   value,
   highlight,
+  muted,
+  action,
+  footer,
 }: {
-  rank: number
+  rank: number | null
   name: string
   meta?: ReactNode
   value: ReactNode
   highlight?: boolean
+  muted?: boolean
+  action?: ReactNode
+  footer?: ReactNode
 }) {
   return (
     <li
       className={cn(
-        'flex items-center gap-4 rounded-2xl border px-4 py-3 transition',
+        'rounded-2xl border px-4 py-3 transition',
         highlight ? 'border-brand-300 bg-info-soft' : 'border-line bg-surface',
+        muted && 'opacity-60',
       )}
     >
-      <span
-        className={cn(
-          'grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold tabular-nums',
-          medals[rank] ?? 'bg-surface-2 text-muted',
-        )}
-      >
-        {rank}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold text-fg">{name}</p>
-        {meta && <p className="text-xs text-muted">{meta}</p>}
+      <div className="flex items-center gap-4">
+        <span
+          className={cn(
+            'grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold tabular-nums',
+            (rank !== null && medals[rank]) || 'bg-surface-2 text-muted',
+          )}
+        >
+          {rank ?? '–'}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold text-fg">{name}</p>
+          {meta && <p className="text-xs text-muted">{meta}</p>}
+        </div>
+        <span className="flex items-center gap-1.5 text-sm font-semibold tabular-nums text-fg">
+          <Star className="size-4 text-warn" aria-hidden />
+          {value}
+        </span>
+        {action}
       </div>
-      <span className="flex items-center gap-1.5 text-sm font-semibold tabular-nums text-fg">
-        <Star className="size-4 text-warn" aria-hidden />
-        {value}
-      </span>
+      {footer && <div className="mt-3 border-t border-line pt-3">{footer}</div>}
     </li>
   )
 }

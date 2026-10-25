@@ -1,5 +1,6 @@
 import { signOut } from 'firebase/auth'
 import {
+  CalendarDays,
   LayoutDashboard,
   LogOut,
   Map as MapIcon,
@@ -56,7 +57,10 @@ export function NavBar() {
         { to: '/map', label: 'Map', icon: MapIcon },
         { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
         ...(profile.accountType === 'admin'
-          ? [{ to: '/admin/orgs', label: 'Verify organizations', icon: ShieldCheck }]
+          ? [
+              { to: '/admin/orgs', label: 'Verify organizations', icon: ShieldCheck },
+              { to: '/admin/events', label: 'Manage events', icon: CalendarDays },
+            ]
           : []),
       ]
     : []

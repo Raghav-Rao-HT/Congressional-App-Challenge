@@ -92,6 +92,7 @@ export function AdminOrgDetailPage() {
         <dl className="grid gap-5 sm:grid-cols-2">
           <Detail label="Legal name">{org.legalName}</Detail>
           <Detail label="Nonprofit type">{org.nonprofitType ?? '—'}</Detail>
+          <Detail label="IRS classification">{org.irsClassification ?? '—'}</Detail>
           <Detail label="Cause area">{org.causeArea}</Detail>
           <Detail label="Address">
             {org.address.street}, {org.address.city}, {org.address.state} {org.address.zip}

@@ -7,11 +7,17 @@ import { Link, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import { AuthLayout } from '../../components/layout/AuthLayout'
 import { Button } from '../../components/ui/Button'
-import { Field, Input, Select } from '../../components/ui/Field'
+import { SelectWithOther } from '../../components/org/SelectWithOther'
+import { Field, Input } from '../../components/ui/Field'
 import { cn } from '../../lib/cn'
 import { auth } from '../../lib/firebase'
 import { createUserProfile } from '../../lib/firestore/users'
-import { NONPROFIT_TYPES, OTHER_NONPROFIT_TYPE } from '../../lib/nonprofitTypes'
+import {
+  IRS_CLASSIFICATIONS,
+  NONPROFIT_TYPES,
+  OTHER_NONPROFIT_TYPE,
+  resolveChoice,
+} from '../../lib/nonprofitTypes'
 import { homePathFor } from '../../lib/roles'
 
 const schema = z
@@ -23,13 +29,23 @@ const schema = z
     accountType: z.enum(['member', 'organization_officer']),
     nonprofitType: z.string(),
     nonprofitTypeOther: z.string(),
+    irsClassification: z.string(),
+    irsClassificationOther: z.string(),
   })
   .superRefine((values, ctx) => {
     if (values.accountType !== 'organization_officer') return
-    if (!values.nonprofitType) {
-      ctx.addIssue({ code: 'custom', path: ['nonprofitType'], message: 'Choose your type of nonprofit' })
-    } else if (values.nonprofitType === OTHER_NONPROFIT_TYPE && !values.nonprofitTypeOther.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['nonprofitTypeOther'], message: 'Tell us what type of nonprofit you are' })
+    // Organizations must say what kind of nonprofit they are and how the IRS
+    // classifies them; "Other" in either list needs the text filled in.
+    const required: [string, string, 'nonprofitType' | 'irsClassification', string, string][] = [
+      [values.nonprofitType, values.nonprofitTypeOther, 'nonprofitType', 'Choose your type of nonprofit', 'Tell us what type of nonprofit you are'],
+      [values.irsClassification, values.irsClassificationOther, 'irsClassification', 'Choose your IRS classification', 'Enter your IRS classification, e.g. 501(c)(12)'],
+    ]
+    for (const [choice, other, name, missing, missingOther] of required) {
+      if (!choice) {
+        ctx.addIssue({ code: 'custom', path: [name], message: missing })
+      } else if (choice === OTHER_NONPROFIT_TYPE && !other.trim()) {
+        ctx.addIssue({ code: 'custom', path: [`${name}Other`], message: missingOther })
+      }
     }
   })
 
@@ -51,10 +67,17 @@ export function SignupPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { accountType: 'member', nonprofitType: '', nonprofitTypeOther: '' },
+    defaultValues: {
+      accountType: 'member',
+      nonprofitType: '',
+      nonprofitTypeOther: '',
+      irsClassification: '',
+      irsClassificationOther: '',
+    },
   })
   const accountType = watch('accountType')
   const nonprofitType = watch('nonprofitType')
+  const irsClassification = watch('irsClassification')
 
   async function onSubmit(values: FormValues) {
     setError(null)
@@ -66,12 +89,10 @@ export function SignupPage() {
         displayName: values.displayName,
         homeState: values.homeState,
         accountType: values.accountType,
-        nonprofitType:
-          values.accountType !== 'organization_officer'
-            ? undefined
-            : values.nonprofitType === OTHER_NONPROFIT_TYPE
-              ? values.nonprofitTypeOther.trim()
-              : values.nonprofitType,
+        ...(values.accountType === 'organization_officer' && {
+          nonprofitType: resolveChoice(values.nonprofitType, values.nonprofitTypeOther),
+          irsClassification: resolveChoice(values.irsClassification, values.irsClassificationOther),
+        }),
       })
       navigate(homePathFor(values.accountType))
     } catch (err) {
@@ -121,28 +142,28 @@ export function SignupPage() {
 
         {accountType === 'organization_officer' && (
           <>
-            <Field label="Type of nonprofit" error={errors.nonprofitType?.message}>
-              <Select aria-invalid={!!errors.nonprofitType} {...register('nonprofitType')}>
-                <option value="" disabled>
-                  Select a type…
-                </option>
-                {NONPROFIT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            {nonprofitType === OTHER_NONPROFIT_TYPE && (
-              <Field label="Describe your nonprofit" error={errors.nonprofitTypeOther?.message}>
-                <Input
-                  placeholder="e.g. Arts education"
-                  aria-invalid={!!errors.nonprofitTypeOther}
-                  {...register('nonprofitTypeOther')}
-                />
-              </Field>
-            )}
+            <SelectWithOther
+              label="Type of nonprofit"
+              options={NONPROFIT_TYPES}
+              selected={nonprofitType}
+              selectProps={register('nonprofitType')}
+              selectError={errors.nonprofitType?.message}
+              otherLabel="Describe your nonprofit"
+              otherPlaceholder="e.g. Arts education"
+              otherProps={register('nonprofitTypeOther')}
+              otherError={errors.nonprofitTypeOther?.message}
+            />
+            <SelectWithOther
+              label="IRS classification"
+              options={IRS_CLASSIFICATIONS}
+              selected={irsClassification}
+              selectProps={register('irsClassification')}
+              selectError={errors.irsClassification?.message}
+              otherLabel="Your IRS classification"
+              otherPlaceholder="e.g. 501(c)(12)"
+              otherProps={register('irsClassificationOther')}
+              otherError={errors.irsClassificationOther?.message}
+            />
           </>
         )}
 

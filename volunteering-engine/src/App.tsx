@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { NavBar } from './components/layout/NavBar'
 import { useAuth } from './context/AuthProvider'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
+import { AdminEventsPage } from './pages/admin/AdminEventsPage'
 import { AdminOrgDetailPage } from './pages/admin/AdminOrgDetailPage'
 import { AdminOrgQueuePage } from './pages/admin/AdminOrgQueuePage'
 import { LoginPage } from './pages/auth/LoginPage'
@@ -67,6 +68,7 @@ export default function App() {
             <Route path="/admin" element={<AdminDashboardPage />} />
             <Route path="/admin/orgs" element={<AdminOrgQueuePage />} />
             <Route path="/admin/orgs/:orgId" element={<AdminOrgDetailPage />} />
+            <Route path="/admin/events" element={<AdminEventsPage />} />
           </Route>
         </Route>
 

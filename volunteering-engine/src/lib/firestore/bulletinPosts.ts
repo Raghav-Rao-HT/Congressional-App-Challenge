@@ -1,4 +1,15 @@
-import { collection, doc, onSnapshot, orderBy, query, setDoc, where } from 'firebase/firestore'
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore'
 import { db } from '../firebase'
 import type { BulletinAudience, BulletinPost } from '../../types/models'
 
@@ -83,4 +94,32 @@ export function subscribeBulletinPosts(
   ]
 
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+}
+
+// Every event, whatever its audience or status, newest first. Only admins can
+// run this: the security rules let anyone else see just the public and
+// own-organization posts the queries above ask for.
+export function subscribeAllBulletinPosts(
+  onChange: (posts: BulletinPost[]) => void,
+  onError: (error: Error) => void,
+): () => void {
+  return onSnapshot(
+    query(collection(db, 'bulletinPosts'), orderBy('startAt', 'desc')),
+    (snapshot) => onChange(snapshot.docs.map((d) => d.data() as BulletinPost)),
+    onError,
+  )
+}
+
+// Deletes an event and its RSVPs. RSVPs are a subcollection, which Firestore
+// does not remove along with the post, so they go first (a batch holds at most
+// 500 writes) and the post last. If anything fails midway the post still
+// exists, so the delete can simply be retried.
+export async function deleteBulletinPost(postId: string): Promise<void> {
+  const rsvps = await getDocs(collection(db, 'bulletinPosts', postId, 'rsvps'))
+  for (let start = 0; start < rsvps.docs.length; start += 400) {
+    const batch = writeBatch(db)
+    rsvps.docs.slice(start, start + 400).forEach((rsvp) => batch.delete(rsvp.ref))
+    await batch.commit()
+  }
+  await deleteDoc(doc(db, 'bulletinPosts', postId))
 }

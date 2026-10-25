@@ -25,6 +25,7 @@ export async function createOrganization(params: {
   website: string
   causeArea: string
   nonprofitType: string | null
+  irsClassification: string | null
 }): Promise<string> {
   const orgRef = doc(collection(db, 'organizations'))
   const now = Date.now()
@@ -46,6 +47,7 @@ export async function createOrganization(params: {
     website: params.website,
     causeArea: params.causeArea,
     nonprofitType: params.nonprofitType,
+    irsClassification: params.irsClassification,
     status: 'pending',
     submittedByUid: params.submittedByUid,
     createdAt: now,

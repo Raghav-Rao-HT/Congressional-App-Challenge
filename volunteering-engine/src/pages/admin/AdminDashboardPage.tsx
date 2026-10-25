@@ -1,4 +1,4 @@
-import { ShieldCheck } from 'lucide-react'
+import { CalendarDays, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ActionCard } from '../../components/ui/ActionCard'
 import { Page, PageHeader } from '../../components/ui/Page'
@@ -24,6 +24,9 @@ export function AdminDashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <ActionCard to="/admin/orgs" icon={ShieldCheck} title="Verify organizations">
           Review new organizations and approve or reject them.
+        </ActionCard>
+        <ActionCard to="/admin/events" icon={CalendarDays} title="Manage events">
+          Review every event and remove ones that shouldn’t be posted.
         </ActionCard>
       </div>
     </Page>

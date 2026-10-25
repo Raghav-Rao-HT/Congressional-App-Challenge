@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import type { AccountType, UserProfile } from '../../types/models'
 
@@ -9,6 +9,7 @@ export async function createUserProfile(params: {
   homeState: string
   accountType: AccountType
   nonprofitType?: string
+  irsClassification?: string
 }): Promise<void> {
   const ref = doc(db, 'users', params.uid)
   const now = Date.now()
@@ -19,6 +20,7 @@ export async function createUserProfile(params: {
     homeState: params.homeState,
     accountType: params.accountType,
     nonprofitType: params.nonprofitType ?? null,
+    irsClassification: params.irsClassification ?? null,
     orgId: null,
     totalPoints: 0,
     totalHoursApproved: 0,
@@ -35,4 +37,11 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const snapshot = await getDoc(ref)
   if (!snapshot.exists()) return null
   return snapshot.data() as UserProfile
+}
+
+// Admin only (the security rules allow an admin to touch just this field and
+// orgId on someone else's profile). Hiding is reversible and keeps the
+// member's points, hours and account intact.
+export async function setLeaderboardHidden(uid: string, hidden: boolean): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { leaderboardHidden: hidden })
 }

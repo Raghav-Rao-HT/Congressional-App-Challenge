@@ -10,12 +10,12 @@ export const SCENES: { id: SceneId; label: string; background: string }[] = [
   },
   {
     id: 'space',
-    label: 'Purple space',
+    label: 'Galaxy',
     background: 'linear-gradient(to bottom, #12062e 0%, #2b0f5c 50%, #5a24a8 100%)',
   },
   {
     id: 'ocean',
-    label: 'Water ocean',
+    label: 'Ocean',
     background: 'linear-gradient(to bottom, #9fdcff 0%, #d9f2ff 53%, #1b86c4 53%, #0a4a82 100%)',
   },
 ]

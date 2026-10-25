@@ -9,6 +9,11 @@ export interface UserProfile {
   // Kind of nonprofit, chosen by organization officers at sign-up. Optional
   // because profiles created before this field existed don't have it.
   nonprofitType?: string | null
+  // The organization's IRS tax-exempt classification, e.g. "501(c)(3) ...",
+  // chosen at sign-up. Optional for the same reason as nonprofitType.
+  irsClassification?: string | null
+  // Set by an admin to take this member off the leaderboard (reversible).
+  leaderboardHidden?: boolean
   orgId: string | null
   totalPoints: number
   totalHoursApproved: number
@@ -40,6 +45,7 @@ export interface Organization {
   // Kind of nonprofit, carried over from the officer's sign-up. Optional
   // because organizations registered before this field existed don't have it.
   nonprofitType?: string | null
+  irsClassification?: string | null
   status: OrgStatus
   submittedByUid: string
   createdAt: number
@@ -113,8 +119,18 @@ export interface Pet {
   lastGrownAt: number | null
 }
 
+// How a member has customised one pet: a colour scheme and an accessory, each
+// the id of an option in lib/petColors.ts / lib/petAccessories.ts (null = none).
+export interface PetLook {
+  color?: string | null
+  accessory?: string | null
+}
+
+// Stored at users/{uid}/island/state. Positions are in island scene units
+// (see lib/islandLayout.ts); a pet with no entry stands in its default spot.
 export interface IslandState {
   petPositions: Record<string, { x: number; y: number }>
+  petLooks?: Record<string, PetLook>
 }
 
 export type FriendshipStatus = 'pending' | 'accepted' | 'declined'

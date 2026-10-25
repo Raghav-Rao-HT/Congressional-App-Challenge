@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
+import { SelectWithOther } from '../../components/org/SelectWithOther'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Field, Input } from '../../components/ui/Field'
@@ -11,6 +12,12 @@ import { Page, PageHeader } from '../../components/ui/Page'
 import { useAuth } from '../../context/AuthProvider'
 import { createOrganization } from '../../lib/firestore/organizations'
 import { geocodeAddress } from '../../lib/geocode'
+import {
+  IRS_CLASSIFICATIONS,
+  NONPROFIT_TYPES,
+  OTHER_NONPROFIT_TYPE,
+  resolveChoice,
+} from '../../lib/nonprofitTypes'
 
 const schema = z.object({
   name: z.string().min(2, 'Enter your organization name'),
@@ -27,9 +34,17 @@ const schema = z.object({
     .refine((value) => /^https?:\/\//i.test(value), 'The URL must start with http:// or https://')
     .or(z.literal('')),
   causeArea: z.string().min(2, 'Enter a cause area, e.g. Food Security'),
+  // Normally chosen at sign-up. These are only asked for here by accounts
+  // created before sign-up required them; onSubmit checks them in that case.
+  nonprofitType: z.string(),
+  nonprofitTypeOther: z.string(),
+  irsClassification: z.string(),
+  irsClassificationOther: z.string(),
 })
 
 type FormValues = z.infer<typeof schema>
+
+const isMissing = (choice: string, other: string) => !choice || (choice === OTHER_NONPROFIT_TYPE && !other.trim())
 
 export function OrgOnboardingPage() {
   const { user, profile } = useAuth()
@@ -38,12 +53,34 @@ export function OrgOnboardingPage() {
   const {
     register,
     handleSubmit,
+    watch,
+    setError: setFieldError,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) })
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { nonprofitType: '', nonprofitTypeOther: '', irsClassification: '', irsClassificationOther: '' },
+  })
+  const needsType = !profile?.nonprofitType
+  const needsIrs = !profile?.irsClassification
+  const nonprofitChoice = watch('nonprofitType')
+  const irsChoice = watch('irsClassification')
 
   async function onSubmit(values: FormValues) {
     if (!user || !profile) return
     setError(null)
+
+    // Every organization needs both a type and an IRS classification.
+    let incomplete = false
+    if (needsType && isMissing(values.nonprofitType, values.nonprofitTypeOther)) {
+      setFieldError(values.nonprofitType ? 'nonprofitTypeOther' : 'nonprofitType', { message: 'Tell us what type of nonprofit you are' })
+      incomplete = true
+    }
+    if (needsIrs && isMissing(values.irsClassification, values.irsClassificationOther)) {
+      setFieldError(values.irsClassification ? 'irsClassificationOther' : 'irsClassification', { message: 'Choose your IRS classification' })
+      incomplete = true
+    }
+    if (incomplete) return
+
     try {
       const address = { street: values.street, city: values.city, state: values.state, zip: values.zip }
       // Locate the address first so the organization can be pinned on the
@@ -60,7 +97,8 @@ export function OrgOnboardingPage() {
         contactPhone: values.contactPhone,
         website: values.website,
         causeArea: values.causeArea,
-        nonprofitType: profile.nonprofitType ?? null,
+        nonprofitType: profile.nonprofitType ?? resolveChoice(values.nonprofitType, values.nonprofitTypeOther),
+        irsClassification: profile.irsClassification ?? resolveChoice(values.irsClassification, values.irsClassificationOther),
       })
       navigate('/org')
     } catch (err) {
@@ -87,6 +125,32 @@ export function OrgOnboardingPage() {
           <Field label="Cause area" error={errors.causeArea?.message}>
             <Input placeholder="e.g. Food Security" aria-invalid={!!errors.causeArea} {...register('causeArea')} />
           </Field>
+          {needsType && (
+            <SelectWithOther
+              label="Type of nonprofit"
+              options={NONPROFIT_TYPES}
+              selected={nonprofitChoice}
+              selectProps={register('nonprofitType')}
+              selectError={errors.nonprofitType?.message}
+              otherLabel="Describe your nonprofit"
+              otherPlaceholder="e.g. Arts education"
+              otherProps={register('nonprofitTypeOther')}
+              otherError={errors.nonprofitTypeOther?.message}
+            />
+          )}
+          {needsIrs && (
+            <SelectWithOther
+              label="IRS classification"
+              options={IRS_CLASSIFICATIONS}
+              selected={irsChoice}
+              selectProps={register('irsClassification')}
+              selectError={errors.irsClassification?.message}
+              otherLabel="Your IRS classification"
+              otherPlaceholder="e.g. 501(c)(12)"
+              otherProps={register('irsClassificationOther')}
+              otherError={errors.irsClassificationOther?.message}
+            />
+          )}
         </Card>
 
         <Card className="space-y-5 p-6">
