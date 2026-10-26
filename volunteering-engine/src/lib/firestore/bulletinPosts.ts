@@ -18,6 +18,7 @@ export async function createBulletinPost(params: {
   authorType: 'member' | 'org'
   orgId: string | null
   audience: BulletinAudience
+  offersServiceHours: boolean
   title: string
   description: string
   startAt: number
@@ -32,6 +33,7 @@ export async function createBulletinPost(params: {
     authorType: params.authorType,
     orgId: params.orgId,
     audience: params.audience,
+    offersServiceHours: params.offersServiceHours,
     approvedCount: 0,
     title: params.title,
     description: params.description,
@@ -44,13 +46,6 @@ export async function createBulletinPost(params: {
   } satisfies BulletinPost)
 }
 
-// Firestore can't hide individual results from a query, so what a person can
-// see is assembled from queries the security rules are guaranteed to allow:
-//  - every public post, and
-//  - everything (including members-only posts) from each organization the
-//    person is an approved member of.
-// The two sets overlap on those organizations' public posts, so results are
-// merged by postId and kept in start-date order.
 export function subscribeBulletinPosts(
   memberOrgIds: string[],
   onChange: (posts: BulletinPost[]) => void,
@@ -96,9 +91,6 @@ export function subscribeBulletinPosts(
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
 }
 
-// Every event, whatever its audience or status, newest first. Only admins can
-// run this: the security rules let anyone else see just the public and
-// own-organization posts the queries above ask for.
 export function subscribeAllBulletinPosts(
   onChange: (posts: BulletinPost[]) => void,
   onError: (error: Error) => void,
@@ -110,10 +102,6 @@ export function subscribeAllBulletinPosts(
   )
 }
 
-// Deletes an event and its RSVPs. RSVPs are a subcollection, which Firestore
-// does not remove along with the post, so they go first (a batch holds at most
-// 500 writes) and the post last. If anything fails midway the post still
-// exists, so the delete can simply be retried.
 export async function deleteBulletinPost(postId: string): Promise<void> {
   const rsvps = await getDocs(collection(db, 'bulletinPosts', postId, 'rsvps'))
   for (let start = 0; start < rsvps.docs.length; start += 400) {

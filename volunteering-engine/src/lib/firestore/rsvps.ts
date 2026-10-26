@@ -8,6 +8,7 @@ import {
   query,
   runTransaction,
   setDoc,
+  writeBatch,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import type { Rsvp } from '../../types/models'
@@ -16,7 +17,26 @@ function rsvpRef(postId: string, uid: string) {
   return doc(db, 'bulletinPosts', postId, 'rsvps', uid)
 }
 
-export async function rsvpToPost(params: { postId: string; uid: string; displayName: string }): Promise<void> {
+export async function rsvpToPost(params: {
+  postId: string
+  uid: string
+  displayName: string
+  autoApprove?: boolean
+}): Promise<void> {
+  if (params.autoApprove) {
+    const now = Date.now()
+    const batch = writeBatch(db)
+    batch.set(rsvpRef(params.postId, params.uid), {
+      uid: params.uid,
+      displayName: params.displayName,
+      status: 'approved',
+      createdAt: now,
+      decidedAt: now,
+    } satisfies Rsvp)
+    batch.update(doc(db, 'bulletinPosts', params.postId), { approvedCount: increment(1) })
+    await batch.commit()
+    return
+  }
   await setDoc(rsvpRef(params.postId, params.uid), {
     uid: params.uid,
     displayName: params.displayName,
@@ -26,12 +46,10 @@ export async function rsvpToPost(params: { postId: string; uid: string; displayN
   } satisfies Rsvp)
 }
 
-// Allowed by the rules only while the RSVP isn't approved.
 export async function cancelRsvp(postId: string, uid: string): Promise<void> {
   await deleteDoc(rsvpRef(postId, uid))
 }
 
-// The signed-in person's own RSVP to one post (null if they haven't RSVP'd).
 export function subscribeMyRsvp(
   postId: string,
   uid: string,
@@ -44,7 +62,6 @@ export function subscribeMyRsvp(
   )
 }
 
-// Every RSVP to a post, for the poster's manage panel.
 export function subscribePostRsvps(postId: string, onChange: (rsvps: Rsvp[]) => void): () => void {
   const q = query(collection(db, 'bulletinPosts', postId, 'rsvps'), orderBy('createdAt', 'asc'))
   return onSnapshot(
@@ -54,9 +71,6 @@ export function subscribePostRsvps(postId: string, onChange: (rsvps: Rsvp[]) => 
   )
 }
 
-// The poster's approve/decline. A transaction so the post's approvedCount
-// moves by exactly the right amount whatever the RSVP's previous status was
-// (pending -> approved is +1, approved -> declined is -1, and so on).
 export async function decideRsvp(params: {
   postId: string
   rsvpUid: string

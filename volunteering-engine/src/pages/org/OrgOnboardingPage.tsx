@@ -34,8 +34,6 @@ const schema = z.object({
     .refine((value) => /^https?:\/\//i.test(value), 'The URL must start with http:// or https://')
     .or(z.literal('')),
   causeArea: z.string().min(2, 'Enter a cause area, e.g. Food Security'),
-  // Normally chosen at sign-up. These are only asked for here by accounts
-  // created before sign-up required them; onSubmit checks them in that case.
   nonprofitType: z.string(),
   nonprofitTypeOther: z.string(),
   irsClassification: z.string(),
@@ -69,7 +67,6 @@ export function OrgOnboardingPage() {
     if (!user || !profile) return
     setError(null)
 
-    // Every organization needs both a type and an IRS classification.
     let incomplete = false
     if (needsType && isMissing(values.nonprofitType, values.nonprofitTypeOther)) {
       setFieldError(values.nonprofitType ? 'nonprofitTypeOther' : 'nonprofitType', { message: 'Tell us what type of nonprofit you are' })
@@ -83,8 +80,6 @@ export function OrgOnboardingPage() {
 
     try {
       const address = { street: values.street, city: values.city, state: values.state, zip: values.zip }
-      // Locate the address first so the organization can be pinned on the
-      // map; a bad address is reported here, before anything is saved.
       const location = await geocodeAddress(address)
       await createOrganization({
         submittedByUid: user.uid,
@@ -99,6 +94,7 @@ export function OrgOnboardingPage() {
         causeArea: values.causeArea,
         nonprofitType: profile.nonprofitType ?? resolveChoice(values.nonprofitType, values.nonprofitTypeOther),
         irsClassification: profile.irsClassification ?? resolveChoice(values.irsClassification, values.irsClassificationOther),
+        autoApprove: !!profile.isTestAccount,
       })
       navigate('/org')
     } catch (err) {

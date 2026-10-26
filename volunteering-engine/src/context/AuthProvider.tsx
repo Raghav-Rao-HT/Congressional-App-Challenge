@@ -1,26 +1,23 @@
 import { onAuthStateChanged, type User } from 'firebase/auth'
-import { doc, onSnapshot } from 'firebase/firestore'
-import { createContext, type ReactNode, useContext, useEffect, useState } from 'react'
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore'
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import { auth, db } from '../lib/firebase'
+import { effectiveAccountType, isSiteOwner } from '../lib/roles'
 import type { UserProfile } from '../types/models'
 
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
   loading: boolean
+  isSiteOwner: boolean
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [savedProfile, setProfile] = useState<UserProfile | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
-  // Defaults to "not yet checked" (false) so that on the render where `user`
-  // first becomes non-null — before the profile effect below has even run —
-  // `loading` already reflects that the profile fetch hasn't resolved yet.
-  // A flag that instead defaulted to "not loading" would let RequireRole see
-  // profile === null for one tick and incorrectly redirect to /login.
   const [profileChecked, setProfileChecked] = useState(false)
 
   useEffect(() => {
@@ -43,10 +40,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }, [user])
 
+  const owner = isSiteOwner(user?.uid)
+
+  const profile = useMemo(
+    () => (user && savedProfile ? { ...savedProfile, accountType: effectiveAccountType(user.uid, savedProfile.accountType) } : null),
+    [user, savedProfile],
+  )
+
+  useEffect(() => {
+    if (!user || !owner || !savedProfile) return
+    if (savedProfile.accountType !== 'member' && savedProfile.accountType !== 'organization_officer') return
+    updateDoc(doc(db, 'users', user.uid), { accountType: 'admin', roleBeforeAdmin: savedProfile.accountType }).catch((error) =>
+      console.error('Could not save the owner role:', error),
+    )
+  }, [user, owner, savedProfile])
+
   const loading = authLoading || (user !== null && !profileChecked)
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, profile, loading, isSiteOwner: owner }}>{children}</AuthContext.Provider>
   )
 }
 

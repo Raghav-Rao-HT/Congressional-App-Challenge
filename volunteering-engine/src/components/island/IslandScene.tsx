@@ -184,12 +184,10 @@ function IslandArt() {
         </g>
       </defs>
 
-      {/* small rocks drifting below the island */}
       <path d="M150 470 l22 -14 l24 10 l-8 22 l-30 4 z" fill="#7a6a5b" />
       <path d="M640 482 l18 -12 l22 8 l-6 18 l-26 4 z" fill="#6b5d50" />
       <path d="M560 520 l12 -8 l14 6 l-4 12 l-18 2 z" fill="#7a6a5b" />
 
-      {/* rock underside, shaded on the right, with a few cracks */}
       <path d={ROCK_PATH} fill="url(#is-rock)" />
       <path
         d="M700 330 L760 330 L760 580 L400 580 L400 549 C470 520 560 470 620 410 C660 370 690 350 700 330 Z"
@@ -203,12 +201,10 @@ function IslandArt() {
         <path d="M350 456 l8 20 l-6 16" />
       </g>
 
-      {/* soil lip and grass top */}
       <ellipse cx="400" cy="336" rx="300" ry="92" fill="#6d4b2e" />
       <ellipse cx="400" cy="326" rx="300" ry="92" fill="#3f9f3e" />
       <ellipse cx="400" cy="318" rx="300" ry="90" fill="url(#is-grass)" />
 
-      {/* flowers */}
       {FLOWERS.map((flower, i) => (
         <g key={i}>
           <circle cx={flower.x} cy={flower.y} r="5" fill={flower.c} />
@@ -216,7 +212,6 @@ function IslandArt() {
         </g>
       ))}
 
-      {/* trees along the back edge, behind the pets */}
       <use href="#is-tree-pine" transform="translate(212 282) scale(1)" />
       <use href="#is-tree-round" transform="translate(142 300) scale(1.05)" />
       <use href="#is-tree-pine" transform="translate(594 280) scale(1.1)" />
@@ -225,10 +220,11 @@ function IslandArt() {
   )
 }
 
-// How far an arrow key moves a pet, in scene units.
 const KEY_STEP = 10
 
-type Drag = { species: string; point: Point; grab: Point; moved: boolean }
+type Drag = { species: string; point: Point; grab: Point; origin: Point; moved: boolean }
+
+const DRAG_THRESHOLD = 4
 
 export function IslandScene({
   scene,
@@ -236,19 +232,18 @@ export function IslandScene({
   positions = {},
   looks = {},
   onMovePet,
+  onClickPet,
 }: {
   scene: SceneId
   pets: Pet[]
-  // Where each pet was last put; a pet with no entry stands in its default spot.
   positions?: Record<string, Point>
   looks?: Record<string, PetLook>
-  // Passing this makes the pets draggable (and movable with the arrow keys).
   onMovePet?: (species: string, point: Point) => void
+  onClickPet?: (species: string) => void
 }) {
   const floaterRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
-  // The latest drag, readable right away: a pointer-up can follow a pointer-move
-  // before React has re-rendered, and must drop the pet where it was last moved to.
+  const [hopping, setHopping] = useState<string | null>(null)
   const dragRef = useRef<Drag | null>(null)
   function updateDrag(next: Drag | null) {
     dragRef.current = next
@@ -257,8 +252,6 @@ export function IslandScene({
   const width = pets.length > 4 ? 14 : 19
   const background = SCENES.find((s) => s.id === scene)?.background
 
-  // Pointer position in scene units, measured against the island's own frame
-  // (which floats up and down, so it is measured fresh on every event).
   function scenePoint(event: PointerEvent): Point | null {
     const frame = floaterRef.current?.getBoundingClientRect()
     if (!frame || frame.width === 0) return null
@@ -270,18 +263,18 @@ export function IslandScene({
 
   function startDrag(event: PointerEvent<HTMLDivElement>, species: string, at: Point) {
     const pointer = scenePoint(event)
-    if (!onMovePet || !pointer || event.button !== 0) return
+    if (!(onMovePet || onClickPet) || !pointer || event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
-    // Remember where on the pet it was grabbed, so it doesn't jump to the cursor.
-    updateDrag({ species, point: at, grab: { x: at.x - pointer.x, y: at.y - pointer.y }, moved: false })
+    updateDrag({ species, point: at, grab: { x: at.x - pointer.x, y: at.y - pointer.y }, origin: at, moved: false })
   }
 
   function moveDrag(event: PointerEvent<HTMLDivElement>, species: string) {
     const current = dragRef.current
     const pointer = scenePoint(event)
-    if (!current || current.species !== species || !pointer) return
+    if (!onMovePet || !current || current.species !== species || !pointer) return
     const point = clampToIsland({ x: pointer.x + current.grab.x, y: pointer.y + current.grab.y })
-    updateDrag({ ...current, point, moved: true })
+    const moved = current.moved || Math.hypot(point.x - current.origin.x, point.y - current.origin.y) > DRAG_THRESHOLD
+    updateDrag({ ...current, point: moved ? point : current.origin, moved })
   }
 
   function endDrag(event: PointerEvent<HTMLDivElement>, species: string) {
@@ -289,11 +282,22 @@ export function IslandScene({
     if (!current || current.species !== species) return
     event.currentTarget.releasePointerCapture(event.pointerId)
     updateDrag(null)
-    // A plain click (no movement) saves nothing, and neither does a cancelled drag.
-    if (current.moved && event.type === 'pointerup') onMovePet?.(species, settle(current.point))
+    if (event.type !== 'pointerup') return
+    if (current.moved) onMovePet?.(species, settle(current.point))
+    else click(species)
+  }
+
+  function click(species: string) {
+    setHopping(species)
+    onClickPet?.(species)
   }
 
   function nudge(event: KeyboardEvent<HTMLDivElement>, species: string, at: Point) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      click(species)
+      return
+    }
     const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]
     if (!onMovePet || !step) return
     event.preventDefault()
@@ -317,21 +321,21 @@ export function IslandScene({
               key={pet.species}
               className={cn(
                 'absolute touch-none select-none',
-                onMovePet && (dragging ? 'cursor-grabbing' : 'cursor-grab'),
+                (onMovePet || onClickPet) && (dragging ? 'cursor-grabbing' : 'cursor-pointer'),
+                onMovePet && !dragging && 'cursor-grab',
               )}
               style={{
                 left: `${(at.x / SCENE_WIDTH) * 100}%`,
                 top: `${(at.y / SCENE_HEIGHT) * 100}%`,
                 width: `${width}%`,
                 transform: 'translate(-50%, -96%)',
-                // Lower on the island means closer to the viewer, so in front.
                 zIndex: dragging ? 1000 : Math.round(at.y),
               }}
               title={`${pet.name} (${petStageLabel(pet.stage)}, ${pet.xp}h)`}
-              {...(onMovePet && {
+              {...((onMovePet || onClickPet) && {
                 role: 'button',
                 tabIndex: 0,
-                'aria-label': `${pet.name}. Drag to move it around the island, or use the arrow keys.`,
+                'aria-label': `${pet.name}. Click to hear it${onMovePet ? ', drag to move it around the island, or use the arrow keys' : ''}.`,
                 onPointerDown: (event: PointerEvent<HTMLDivElement>) => startDrag(event, pet.species, saved),
                 onPointerMove: (event: PointerEvent<HTMLDivElement>) => moveDrag(event, pet.species),
                 onPointerUp: (event: PointerEvent<HTMLDivElement>) => endDrag(event, pet.species),
@@ -347,13 +351,19 @@ export function IslandScene({
                 className={cn('island-bob', dragging && 'scale-105')}
                 style={{ animationDelay: `${index * -0.7}s`, animationPlayState: dragging ? 'paused' : 'running' }}
               >
-                <PetSprite
-                  species={pet.species}
-                  stage={pet.stage}
-                  fill
-                  look={looks[pet.species]}
-                  className={cn('pointer-events-none size-full drop-shadow-md', at.x > SCENE_WIDTH / 2 && '-scale-x-100')}
-                />
+                <div
+                  className={cn('size-full', hopping === pet.species && 'island-hop')}
+                  onAnimationEnd={() => setHopping(null)}
+                >
+                  <PetSprite
+                    species={pet.species}
+                    stage={pet.stage}
+                    fill
+                    look={looks[pet.species]}
+                    name={pet.name}
+                    className={cn('pointer-events-none size-full drop-shadow-md', at.x > SCENE_WIDTH / 2 && '-scale-x-100')}
+                  />
+                </div>
               </div>
             </div>
           )

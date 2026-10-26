@@ -5,6 +5,7 @@ import { PetSprite } from '../../components/pets/PetSprite'
 import { Badge } from '../../components/ui/Badge'
 import { Card } from '../../components/ui/Card'
 import { Page, PageHeader } from '../../components/ui/Page'
+import { useAuth } from '../../context/AuthProvider'
 import { useIslandState } from '../../hooks/useIslandState'
 import { useMyPets } from '../../hooks/useMyPets'
 import { petStageLabel } from '../../lib/petVisuals'
@@ -12,6 +13,7 @@ import { nextStageThreshold, PET_STAGE_THRESHOLDS } from '../../lib/points'
 
 export function PetsPage() {
   const pets = useMyPets()
+  const { profile } = useAuth()
   const { looks, error, setLook } = useIslandState()
   const [customizing, setCustomizing] = useState<string | null>(null)
   const chosen = pets.find((pet) => pet.species === customizing)
@@ -20,7 +22,7 @@ export function PetsPage() {
     <Page>
       <PageHeader
         title="Your pets"
-        description={`When you log hours you choose which pet they go to. Each pet changes its look at ${PET_STAGE_THRESHOLDS.slice(1).join(', ')} hours. Click a pet to paint it or give it an accessory.`}
+        description={`When you log hours you choose which pet they go to. Each pet changes its look at ${PET_STAGE_THRESHOLDS.slice(1).join(', ')} hours. Click a pet to paint it, dress it up or give it something to hold. Some looks unlock as you give more service hours.`}
       />
 
       {error && (
@@ -62,6 +64,7 @@ export function PetsPage() {
                   stage={pet.stage}
                   size={112}
                   look={looks[pet.species]}
+                  name={pet.name}
                   className="relative drop-shadow-md"
                 />
               </div>
@@ -97,6 +100,7 @@ export function PetsPage() {
         <PetCustomizer
           pet={chosen}
           look={looks[chosen.species] ?? {}}
+          hours={profile?.totalHoursApproved ?? 0}
           onChange={(patch) => setLook(chosen.species, { ...looks[chosen.species], ...patch })}
           onClose={() => setCustomizing(null)}
         />

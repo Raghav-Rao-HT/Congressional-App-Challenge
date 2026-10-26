@@ -1,6 +1,5 @@
 import type { OrgLocation } from '../types/models'
 
-// Bounding box around the whole state, as [southWest, northEast] lat/lng.
 export const NJ_BOUNDS: [[number, number], [number, number]] = [
   [38.78, -75.6],
   [41.37, -73.85],

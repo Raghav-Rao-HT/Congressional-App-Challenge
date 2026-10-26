@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Globe2, Lock } from 'lucide-react'
+import { Clock, Globe2, Lock } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -14,6 +14,7 @@ import { createBulletinPost } from '../../lib/firestore/bulletinPosts'
 
 const schema = z.object({
   audience: z.enum(['public', 'members']),
+  offersServiceHours: z.enum(['yes', 'no'], { error: 'Choose whether this event gives service hours' }),
   title: z.string().min(2, 'Enter a title'),
   description: z.string().min(3, 'Describe the opportunity'),
   startAt: z.string().min(1, 'Choose a start date'),
@@ -26,10 +27,6 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>
 
-// A bare "YYYY-MM-DD" string parses as UTC midnight (per the Date spec),
-// which then renders as the previous day in any timezone behind UTC.
-// Parsing the components explicitly constructs local midnight instead, so
-// the date entered is the date displayed everywhere downstream.
 function localDateMillis(dateStr: string): number {
   const [year, month, day] = dateStr.split('-').map(Number)
   return new Date(year, month - 1, day).getTime()
@@ -46,8 +43,6 @@ export function NewEventPage() {
   const { org } = useMyOrganization()
   const [error, setError] = useState<string | null>(null)
 
-  // An officer posts as their organization, and only once an admin has
-  // approved it (approval is what sets the officer's orgId).
   const isOfficer = profile?.accountType === 'organization_officer'
   const officerOrgId = isOfficer ? (profile?.orgId ?? null) : null
 
@@ -83,6 +78,7 @@ export function NewEventPage() {
         authorType: officerOrgId ? 'org' : 'member',
         orgId: officerOrgId,
         audience: officerOrgId ? values.audience : 'public',
+        offersServiceHours: values.offersServiceHours === 'yes',
         title: values.title,
         description: values.description,
         startAt: localDateMillis(values.startAt),
@@ -134,6 +130,36 @@ export function NewEventPage() {
             </fieldset>
           </Card>
         )}
+
+        <Card className="p-6">
+          <fieldset aria-describedby={errors.offersServiceHours ? 'service-hours-error' : undefined}>
+            <legend className="mb-3 text-base font-semibold text-fg">Does this event give service hours?</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className={radioCard}>
+                <input type="radio" value="yes" {...register('offersServiceHours')} className="mt-1 accent-brand-600" />
+                <span>
+                  <span className="flex items-start gap-1.5 font-semibold text-fg">
+                    <Clock className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    Yes, it gives service hours
+                  </span>
+                  <span className="mt-0.5 block text-sm text-muted">People who take part can count their time as service hours.</span>
+                </span>
+              </label>
+              <label className={radioCard}>
+                <input type="radio" value="no" {...register('offersServiceHours')} className="mt-1 accent-brand-600" />
+                <span>
+                  <span className="font-semibold text-fg">No, it doesn't</span>
+                  <span className="mt-0.5 block text-sm text-muted">A meeting, social or other event that doesn't count as service hours.</span>
+                </span>
+              </label>
+            </div>
+            {errors.offersServiceHours && (
+              <p id="service-hours-error" role="alert" className="mt-2 text-xs font-medium text-bad">
+                {errors.offersServiceHours.message}
+              </p>
+            )}
+          </fieldset>
+        </Card>
 
         <Card className="space-y-5 p-6">
           <Field label="Title" error={errors.title?.message}>

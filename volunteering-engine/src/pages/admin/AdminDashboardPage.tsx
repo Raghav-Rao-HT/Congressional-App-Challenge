@@ -1,10 +1,12 @@
-import { CalendarDays, ShieldCheck } from 'lucide-react'
+import { CalendarDays, ShieldCheck, UserCog } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ActionCard } from '../../components/ui/ActionCard'
 import { Page, PageHeader } from '../../components/ui/Page'
+import { useAuth } from '../../context/AuthProvider'
 import { subscribeOrganizationsByStatus } from '../../lib/firestore/organizations'
 
 export function AdminDashboardPage() {
+  const { isSiteOwner } = useAuth()
   const [pendingCount, setPendingCount] = useState<number | null>(null)
 
   useEffect(() => subscribeOrganizationsByStatus('pending', (orgs) => setPendingCount(orgs.length)), [])
@@ -28,6 +30,11 @@ export function AdminDashboardPage() {
         <ActionCard to="/admin/events" icon={CalendarDays} title="Manage events">
           Review every event and remove ones that shouldn’t be posted.
         </ActionCard>
+        {isSiteOwner && (
+          <ActionCard to="/owner/accounts" icon={UserCog} title="Manage accounts">
+            See everyone who is registered, make accounts admins, or mark test accounts.
+          </ActionCard>
+        )}
       </div>
     </Page>
   )

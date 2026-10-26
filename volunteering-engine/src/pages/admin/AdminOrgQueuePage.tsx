@@ -22,8 +22,6 @@ export function AdminOrgQueuePage() {
   const [tab, setTab] = useState<Tab>('pending')
   const [result, setResult] = useState<{ tab: Tab; orgs: Organization[] }>({ tab: 'pending', orgs: [] })
   const info = TAB_INFO[tab]
-  // After switching tabs, show an empty list until the new tab's data
-  // arrives rather than the previous tab's organizations.
   const orgs = result.tab === tab ? result.orgs : []
 
   useEffect(() => subscribeOrganizationsByStatus(tab, (next) => setResult({ tab, orgs: next })), [tab])

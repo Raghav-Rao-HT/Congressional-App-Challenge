@@ -5,12 +5,14 @@ import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminEventsPage } from './pages/admin/AdminEventsPage'
 import { AdminOrgDetailPage } from './pages/admin/AdminOrgDetailPage'
 import { AdminOrgQueuePage } from './pages/admin/AdminOrgQueuePage'
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { SignupPage } from './pages/auth/SignupPage'
 import { BulletinBoardPage } from './pages/bulletin/BulletinBoardPage'
 import { NewEventPage } from './pages/bulletin/NewEventPage'
 import { LeaderboardPage } from './pages/LeaderboardPage'
 import { NewJerseyMapPage } from './pages/map/NewJerseyMapPage'
+import { ManageAccountsPage } from './pages/owner/ManageAccountsPage'
 import { FriendsPage } from './pages/member/FriendsPage'
 import { GoalsPage } from './pages/member/GoalsPage'
 import { IslandPage } from './pages/member/IslandPage'
@@ -23,6 +25,7 @@ import { OrgMembersPage } from './pages/org/OrgMembersPage'
 import { OrgOnboardingPage } from './pages/org/OrgOnboardingPage'
 import { ProtectedRoute } from './routes/ProtectedRoute'
 import { RequireRole } from './routes/RequireRole'
+import { RequireSiteOwner } from './routes/RequireSiteOwner'
 import { homePathFor } from './lib/roles'
 
 function HomeRedirect() {
@@ -41,6 +44,7 @@ export default function App() {
         <Route path="/" element={<HomeRedirect />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/bulletin" element={<BulletinBoardPage />} />
@@ -69,6 +73,10 @@ export default function App() {
             <Route path="/admin/orgs" element={<AdminOrgQueuePage />} />
             <Route path="/admin/orgs/:orgId" element={<AdminOrgDetailPage />} />
             <Route path="/admin/events" element={<AdminEventsPage />} />
+          </Route>
+
+          <Route element={<RequireSiteOwner />}>
+            <Route path="/owner/accounts" element={<ManageAccountsPage />} />
           </Route>
         </Route>
 

@@ -2,8 +2,6 @@ import type { ComponentProps } from 'react'
 import { OTHER_NONPROFIT_TYPE } from '../../lib/nonprofitTypes'
 import { Field, Input, Select } from '../ui/Field'
 
-// A required dropdown, plus a text box that appears when "Other" is chosen.
-// The form owns the values; this just lays out the two fields.
 export function SelectWithOther({
   label,
   options,

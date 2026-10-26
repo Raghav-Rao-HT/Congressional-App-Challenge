@@ -8,10 +8,6 @@ const medals: Record<number, string> = {
   3: 'bg-gradient-to-br from-orange-300 to-orange-500 text-orange-950',
 }
 
-// One line of a ranking: medal/number, name, and a score on the right.
-// `rank` is null for an entry that isn't ranked (shown as a dash), `muted`
-// dims it, `action` adds controls (e.g. an admin's Remove button) after the
-// score, and `footer` adds a line underneath (e.g. a confirmation).
 export function RankRow({
   rank,
   name,

@@ -10,9 +10,6 @@ export interface GoalProgressResult {
   awardedBonus: number
 }
 
-// Pure: what a goal's progress update would be for an approval of `hours`,
-// without writing anything. Kept free of Firebase imports so the approval
-// math can be planned (and tested) on its own.
 export function computeGoalProgress(goal: Goal, hours: number): GoalProgressResult {
   const progressHours = goal.progressHours + hours
   const justCompleted = !goal.bonusPointsAwarded && progressHours >= goal.targetHours

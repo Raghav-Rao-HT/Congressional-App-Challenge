@@ -4,8 +4,6 @@ import { getPetSpecies } from './petVisuals'
 import { deriveStage, pointsForHours } from './points'
 import { applyStreakUpdate } from './streaks'
 
-// A problem with an approval that the officer can understand and act on.
-// Always thrown before anything is written.
 export class ApprovalError extends Error {
   constructor(message: string) {
     super(message)
@@ -14,14 +12,12 @@ export class ApprovalError extends Error {
 }
 
 export interface ApprovalInputs {
-  // What the officer reviewed on screen; checked against the stored log.
   hours: number
   date: string
   petId: string
   orgId: string
-  // What is currently stored.
   logStatus: HourLogStatus
-  membershipStatus: OrgMemberStatus | null // null: no membership record at all
+  membershipStatus: OrgMemberStatus | null
   member: UserProfile | null
   pet: Pet | null
   goals: Goal[]
@@ -46,9 +42,6 @@ const MEMBERSHIP_PROBLEMS: Record<OrgMemberStatus, string> = {
   removed: 'This volunteer is no longer a member of your organization.',
 }
 
-// Pure: decides everything an approval will change (points, streak, pet,
-// goals) or refuses with a clear reason. No reads or writes happen here, so
-// the caller can run it inside a transaction and apply the result atomically.
 export function planApproval(input: ApprovalInputs): ApprovalPlan {
   if (!Number.isFinite(input.hours) || input.hours <= 0) {
     throw new ApprovalError('These hours are not a valid amount.')
@@ -75,8 +68,6 @@ export function planApproval(input: ApprovalInputs): ApprovalPlan {
     newServiceDateISO: input.date,
   })
 
-  // Goals that this approval counts toward: still active, and either overall
-  // (no organization) or for this organization.
   const goals = input.goals
     .filter((g) => g.status === 'active' && (g.orgId === null || g.orgId === input.orgId))
     .map((g) => computeGoalProgress(g, input.hours))

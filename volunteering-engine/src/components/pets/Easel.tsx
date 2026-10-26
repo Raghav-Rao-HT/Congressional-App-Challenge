@@ -1,23 +1,21 @@
-import { Check, RotateCcw } from 'lucide-react'
+import { Check, Lock, RotateCcw } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '../../lib/cn'
-import { COLOR_SCHEMES } from '../../lib/petColors'
+import { COLOR_SCHEMES, isSpecialScheme } from '../../lib/petColors'
 
-// An artist's easel: a canvas board (holding `children`, the pet being
-// painted), a tray of paint blobs to click, and legs. `colorId` is the
-// scheme in use, or null for the pet's original colours.
 export function Easel({
   colorId,
+  hours,
   onPick,
   children,
 }: {
   colorId: string | null | undefined
+  hours: number
   onPick: (colorId: string | null) => void
   children: ReactNode
 }) {
   return (
     <div className="mx-auto w-full max-w-sm">
-      {/* the board: a wooden clamp across the top, then the canvas in its frame */}
       <div className="mx-auto h-3 w-[88%] rounded-full bg-gradient-to-b from-[#d9a66b] to-[#a8703a] shadow-sm" />
       <div className="mx-auto -mt-1 w-[80%] rounded-lg border-[10px] border-[#c28b52] bg-gradient-to-b from-info-soft to-violet-soft shadow-lift">
         <div className="relative grid aspect-square place-items-center">
@@ -26,7 +24,6 @@ export function Easel({
         </div>
       </div>
 
-      {/* the tray the paint sits on */}
       <div className="relative z-10 -mt-3 rounded-2xl bg-gradient-to-b from-[#d9a66b] to-[#b5773f] p-3 shadow-card">
         <div
           role="group"
@@ -40,7 +37,7 @@ export function Easel({
             style={{ background: 'linear-gradient(135deg, #ffffff 0 46%, #e9e9ef 46% 54%, #ffffff 54%)' }}
             mark={<RotateCcw className="size-4 text-muted" aria-hidden />}
           />
-          {COLOR_SCHEMES.map((scheme) => (
+          {COLOR_SCHEMES.filter((scheme) => !isSpecialScheme(scheme)).map((scheme) => (
             <PaintBlob
               key={scheme.id}
               label={scheme.name}
@@ -51,9 +48,30 @@ export function Easel({
             />
           ))}
         </div>
+
+        <p className="mt-3 text-center text-xs font-bold uppercase tracking-wide text-white/90">Special finishes</p>
+        <div role="group" aria-label="Special finishes" className="mt-2 flex items-start justify-center gap-3">
+          {COLOR_SCHEMES.filter(isSpecialScheme).map((scheme) => {
+            const locked = hours < scheme.minHours
+            return (
+              <div key={scheme.id} className="flex w-12 flex-col items-center gap-1">
+                <PaintBlob
+                  label={locked ? `${scheme.name} (unlocks at ${scheme.minHours} service hours)` : scheme.name}
+                  selected={colorId === scheme.id}
+                  locked={locked}
+                  onClick={() => onPick(scheme.id)}
+                  style={{ background: scheme.swatch }}
+                  mark={<Check className="size-4 text-white drop-shadow" aria-hidden />}
+                />
+                <span className="text-[11px] font-semibold leading-none text-white/95">
+                  {locked ? `${scheme.minHours} h` : scheme.name}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
-      {/* the legs */}
       <svg viewBox="0 0 320 110" className="mx-auto -mt-2 block h-24 w-[80%]" aria-hidden>
         <g stroke="#a8703a" strokeWidth="14" strokeLinecap="round">
           <path d="M90 6 L48 100" />
@@ -74,12 +92,14 @@ export function Easel({
 function PaintBlob({
   label,
   selected,
+  locked = false,
   onClick,
   style,
   mark,
 }: {
   label: string
   selected: boolean
+  locked?: boolean
   onClick: () => void
   style: CSSProperties
   mark: ReactNode
@@ -87,17 +107,19 @@ function PaintBlob({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={locked ? undefined : onClick}
       aria-pressed={selected}
+      aria-disabled={locked || undefined}
       aria-label={label}
       title={label}
       style={style}
       className={cn(
-        'grid size-9 place-items-center rounded-[48%_52%_46%_54%/55%_45%_55%_45%] shadow-[inset_0_-3px_5px_rgb(0_0_0/0.18),inset_0_2px_3px_rgb(255_255_255/0.45)] transition hover:scale-110 focus-visible:outline-offset-4',
+        'grid size-9 place-items-center rounded-[48%_52%_46%_54%/55%_45%_55%_45%] shadow-[inset_0_-3px_5px_rgb(0_0_0/0.18),inset_0_2px_3px_rgb(255_255_255/0.45)] transition focus-visible:outline-offset-4',
+        locked ? 'cursor-not-allowed opacity-70 saturate-50' : 'hover:scale-110',
         selected && 'ring-[3px] ring-white ring-offset-2 ring-offset-[#b5773f]',
       )}
     >
-      {selected && mark}
+      {locked ? <Lock className="size-4 text-white drop-shadow-[0_1px_2px_rgb(0_0_0/0.6)]" aria-hidden /> : selected && mark}
     </button>
   )
 }

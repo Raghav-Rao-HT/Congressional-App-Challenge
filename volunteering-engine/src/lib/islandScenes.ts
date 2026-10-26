@@ -1,5 +1,3 @@
-// Backdrops a member can put behind their floating island. `background` is
-// the base fill; IslandScene draws the clouds, stars or waves on top of it.
 export type SceneId = 'sky' | 'space' | 'ocean'
 
 export const SCENES: { id: SceneId; label: string; background: string }[] = [

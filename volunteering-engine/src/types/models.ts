@@ -6,13 +6,10 @@ export interface UserProfile {
   displayName: string
   homeState: string
   accountType: AccountType
-  // Kind of nonprofit, chosen by organization officers at sign-up. Optional
-  // because profiles created before this field existed don't have it.
+  roleBeforeAdmin?: 'member' | 'organization_officer'
+  isTestAccount?: boolean
   nonprofitType?: string | null
-  // The organization's IRS tax-exempt classification, e.g. "501(c)(3) ...",
-  // chosen at sign-up. Optional for the same reason as nonprofitType.
   irsClassification?: string | null
-  // Set by an admin to take this member off the leaderboard (reversible).
   leaderboardHidden?: boolean
   orgId: string | null
   totalPoints: number
@@ -42,8 +39,6 @@ export interface Organization {
   contactPhone: string
   website: string
   causeArea: string
-  // Kind of nonprofit, carried over from the officer's sign-up. Optional
-  // because organizations registered before this field existed don't have it.
   nonprofitType?: string | null
   irsClassification?: string | null
   status: OrgStatus
@@ -53,9 +48,6 @@ export interface Organization {
   reviewedByAdminUid: string | null
   rejectionReason: string | null
   memberCount: number
-  // Geocoded from `address` at submission time, for the map tab. Optional
-  // because orgs submitted before the map existed (or whose address
-  // couldn't be geocoded) don't have it and simply don't get a marker.
   location?: OrgLocation | null
 }
 
@@ -84,9 +76,6 @@ export interface HourLog {
   logId: string
   memberUid: string
   orgId: string
-  // The pet the member chose to give these hours to. Optional because logs
-  // submitted before pet choice existed don't have it (treated as the
-  // default pet).
   petId?: string
   date: string
   hours: number
@@ -97,19 +86,15 @@ export interface HourLog {
   reviewedAt: number | null
   reviewedByUid: string | null
   rejectionReason: string | null
-  // The officer's sign-off: a "data:image/png;base64,..." URL stored on the
-  // log itself (there is no Cloud Storage bucket). Usable directly as an
-  // <img src>.
   signatureURL: string | null
   pointsAwarded: number | null
+  autoApproved?: boolean
+  replyImageURL?: string | null
+  replyAt?: number | null
 }
 
-// Index into the sprite order: 0 = starting sprite, then one step up at each
-// hour threshold (see PET_STAGE_THRESHOLDS in lib/points.ts).
 export type PetStage = 0 | 1 | 2 | 3
 
-// Stored at users/{uid}/pets/{species}: one pet per species, and a member
-// chooses which of their pets receives the hours on each submission.
 export interface Pet {
   species: string
   name: string
@@ -119,15 +104,13 @@ export interface Pet {
   lastGrownAt: number | null
 }
 
-// How a member has customised one pet: a colour scheme and an accessory, each
-// the id of an option in lib/petColors.ts / lib/petAccessories.ts (null = none).
 export interface PetLook {
   color?: string | null
   accessory?: string | null
+  held?: string | null
+  name?: string | null
 }
 
-// Stored at users/{uid}/island/state. Positions are in island scene units
-// (see lib/islandLayout.ts); a pet with no entry stands in its default spot.
 export interface IslandState {
   petPositions: Record<string, { x: number; y: number }>
   petLooks?: Record<string, PetLook>
@@ -160,8 +143,6 @@ export interface Goal {
 
 export type BulletinPostStatus = 'open' | 'closed' | 'cancelled'
 
-// 'members' posts are visible only to the posting organization's approved
-// members; 'public' posts are visible to every signed-in user.
 export type BulletinAudience = 'public' | 'members'
 
 export interface BulletinPost {
@@ -170,8 +151,7 @@ export interface BulletinPost {
   authorType: 'member' | 'org'
   orgId: string | null
   audience: BulletinAudience
-  // Denormalized count of approved RSVPs, kept in step by the poster's
-  // approve/decline writes so the board never has to count per card.
+  offersServiceHours?: boolean
   approvedCount: number
   title: string
   description: string
@@ -185,7 +165,6 @@ export interface BulletinPost {
 
 export type RsvpStatus = 'pending' | 'approved' | 'declined'
 
-// Stored at bulletinPosts/{postId}/rsvps/{uid}: one RSVP per person per post.
 export interface Rsvp {
   uid: string
   displayName: string

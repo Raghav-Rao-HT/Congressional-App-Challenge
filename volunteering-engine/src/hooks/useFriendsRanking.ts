@@ -30,9 +30,6 @@ export function useFriendsRanking(myUid: string | undefined): {
 
   useEffect(() => {
     if (!myUid) return
-    // Fetched for every friendship regardless of status, not just accepted
-    // ones — FriendsPage also needs the requester's name on an incoming
-    // pending request.
     const missing = friendships.map((f) => otherUid(f, myUid)).filter((uid) => !(uid in profiles))
     if (missing.length === 0) return
     Promise.all(

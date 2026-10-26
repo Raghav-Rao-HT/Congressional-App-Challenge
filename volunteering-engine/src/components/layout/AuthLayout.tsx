@@ -7,8 +7,6 @@ const HIGHLIGHTS: { icon: LucideIcon; title: string; body: string }[] = [
   { icon: MapPin, title: 'Find opportunities', body: 'Browse New Jersey organizations and events near you.' },
 ]
 
-// Shared frame for login/signup: a brand panel beside the form on large
-// screens, and just the form on phones.
 export function AuthLayout({
   title,
   subtitle,

@@ -17,7 +17,6 @@ const sizes: Record<ButtonSize, string> = {
   lg: 'h-12 px-6 text-base',
 }
 
-// Exposed so router <Link>s (and anything else) can look like buttons.
 export function buttonClasses(variant: ButtonVariant = 'primary', size: ButtonSize = 'md', className?: string) {
   return cn(
     'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl font-semibold transition duration-150',

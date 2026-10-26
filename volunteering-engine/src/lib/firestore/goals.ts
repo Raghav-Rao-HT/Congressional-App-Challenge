@@ -29,10 +29,6 @@ export async function createGoal(params: {
   } satisfies Goal)
 }
 
-// Called from the approving officer's own client (see hourLogs.ts
-// approveHourLog) to find the member's candidate goals for an approval: any
-// goal scoped to the log's org, plus any overall (orgId === null) goal. The
-// approval transaction re-reads each one, so this list only picks documents.
 export async function getActiveGoalsForMember(uid: string, orgId: string): Promise<Goal[]> {
   const q = query(collection(db, 'users', uid, 'goals'), where('status', '==', 'active'))
   const snapshot = await getDocs(q)

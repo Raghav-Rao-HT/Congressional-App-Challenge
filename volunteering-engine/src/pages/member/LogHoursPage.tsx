@@ -3,6 +3,8 @@ import { Building2, CircleCheck, ClipboardList } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
+import { ImagePicker } from '../../components/hourlog/ImagePicker'
+import { ImageThumb } from '../../components/hourlog/ImageViewer'
 import { PetSprite } from '../../components/pets/PetSprite'
 import { Badge, type BadgeTone } from '../../components/ui/Badge'
 import { Button, ButtonLink } from '../../components/ui/Button'
@@ -13,7 +15,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useAuth } from '../../context/AuthProvider'
 import { useMyPets } from '../../hooks/useMyPets'
 import { useOrgApplications } from '../../hooks/useOrgApplications'
-import { submitHourLog, subscribeMyHourLogs } from '../../lib/firestore/hourLogs'
+import { submitAutoApprovedHourLog, submitHourLog, subscribeMyHourLogs } from '../../lib/firestore/hourLogs'
 import { subscribeApprovedOrganizations } from '../../lib/firestore/organizations'
 import { DEFAULT_PET_ID, petStageLabel } from '../../lib/petVisuals'
 import type { HourLog, Organization } from '../../types/models'
@@ -36,11 +38,12 @@ const statusTone: Record<HourLog['status'], BadgeTone> = {
 }
 
 export function LogHoursPage() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [myLogs, setMyLogs] = useState<HourLog[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [submitted, setSubmitted] = useState(false)
+  const [submitted, setSubmitted] = useState<'pending' | 'approved' | null>(null)
+  const [scan, setScan] = useState<string | null>(null)
   const pets = useMyPets()
   const { applications, loadState } = useOrgApplications()
   const {
@@ -65,27 +68,27 @@ export function LogHoursPage() {
     return subscribeMyHourLogs(user.uid, setMyLogs)
   }, [user])
 
-  // Hours are signed off by the organization, so a volunteer can only log
-  // them for organizations they have actually joined (the security rules
-  // enforce this too).
   const joinedOrgs = orgs.filter((org) => applications[org.orgId] === 'approved')
   const waitingOrgs = orgs.filter((org) => applications[org.orgId] === 'applied')
 
   async function onSubmit(values: FormValues) {
     if (!user) return
     setError(null)
-    setSubmitted(false)
+    setSubmitted(null)
     try {
-      await submitHourLog({
+      const testAccount = !!profile?.isTestAccount
+      await (testAccount ? submitAutoApprovedHourLog : submitHourLog)({
         memberUid: user.uid,
         orgId: values.orgId,
         petId: values.petId,
         date: values.date,
         hours: values.hours,
         description: values.description,
+        attachment: scan,
       })
       reset()
-      setSubmitted(true)
+      setScan(null)
+      setSubmitted(testAccount ? 'approved' : 'pending')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not submit this log. Try again.')
     }
@@ -152,7 +155,7 @@ export function LogHoursPage() {
               error={errors.petId?.message}
             >
               <span className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
-                {chosenPet && <PetSprite species={chosenPet.species} stage={chosenPet.stage} size={48} />}
+                {chosenPet && <PetSprite species={chosenPet.species} stage={chosenPet.stage} size={48} name={chosenPet.name} />}
                 <Select aria-invalid={!!errors.petId} {...register('petId')}>
                   {pets.map((pet) => (
                     <option key={pet.species} value={pet.species}>
@@ -167,6 +170,14 @@ export function LogHoursPage() {
               <Textarea rows={3} aria-invalid={!!errors.description} {...register('description')} />
             </Field>
 
+            <ImagePicker
+              label="Scan in a timesheet or proof (optional)"
+              hint="Take a photo or upload one. The organization can see it, and can send a picture back."
+              value={scan}
+              onChange={setScan}
+              disabled={isSubmitting}
+            />
+
             {error && (
               <p role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm font-medium text-bad">
                 {error}
@@ -178,7 +189,9 @@ export function LogHoursPage() {
                 className="flex items-center gap-2 rounded-xl bg-ok-soft px-4 py-3 text-sm font-medium text-ok"
               >
                 <CircleCheck className="size-4" aria-hidden />
-                Submitted — pending organization sign-off.
+                {submitted === 'approved'
+                  ? 'Submitted and approved automatically (test account).'
+                  : 'Submitted — pending organization sign-off.'}
               </p>
             )}
 
@@ -200,16 +213,24 @@ export function LogHoursPage() {
           <ul className="space-y-2">
             {myLogs.map((log) => (
               <li key={log.logId}>
-                <Card className="flex items-center justify-between gap-4 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-fg tabular-nums">
-                      {log.hours}h <span className="font-normal text-muted">· {log.date}</span>
-                    </p>
-                    <p className="truncate text-sm text-muted">{log.description}</p>
+                <Card className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-fg tabular-nums">
+                        {log.hours}h <span className="font-normal text-muted">· {log.date}</span>
+                      </p>
+                      <p className="truncate text-sm text-muted">{log.description}</p>
+                    </div>
+                    <Badge tone={statusTone[log.status]} className="capitalize">
+                      {log.status}
+                    </Badge>
                   </div>
-                  <Badge tone={statusTone[log.status]} className="capitalize">
-                    {log.status}
-                  </Badge>
+                  {(log.attachmentURLs[0] || log.replyImageURL) && (
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      {log.attachmentURLs[0] && <ImageThumb src={log.attachmentURLs[0]} label="Your scan" />}
+                      {log.replyImageURL && <ImageThumb src={log.replyImageURL} label="From the organization" />}
+                    </div>
+                  )}
                 </Card>
               </li>
             ))}

@@ -1,23 +1,3 @@
-// Bootstraps a platform admin account: sets the Firebase Auth custom claim
-// { admin: true } (the only thing Firestore security rules can trust to
-// gate admin-only writes, like approving an organization) and upserts the
-// matching Firestore users/{uid} profile with accountType: 'admin' (which
-// drives client-side routing). Creates the Auth user first if it doesn't
-// exist yet.
-//
-// Against the local emulator suite (the default — see FIREBASE_AUTH_EMULATOR_HOST
-// and FIRESTORE_EMULATOR_HOST below):
-//   node scripts/setAdminClaim.mjs admin@example.com password123 "Admin Name"
-//
-// Against a real Firebase project (how a site owner gets an admin account):
-//   USE_EMULATOR=false GCLOUD_PROJECT=<your-project-id> \
-//   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
-//   node scripts/setAdminClaim.mjs owner@yourdomain.org "<password>" "Owner Name"
-// If the email already has an account the existing user is promoted and the
-// password argument is ignored. The person must sign out and back in once
-// for the new claim to take effect. The service-account key is a secret:
-// keep it outside the repo.
-
 import { initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
@@ -34,8 +14,6 @@ if (!email || !password || !displayName) {
   process.exit(1)
 }
 
-// Against a real project the target must be named explicitly, so an
-// admin is never created in the wrong project by accident.
 const projectId = process.env.GCLOUD_PROJECT ?? (useEmulator ? 'demo-volunteering-engine' : undefined)
 if (!projectId) {
   console.error('Set GCLOUD_PROJECT=<your-project-id> when USE_EMULATOR=false.')
@@ -59,27 +37,27 @@ try {
 await auth.setCustomUserClaims(user.uid, { admin: true })
 console.log('Set custom claim { admin: true }')
 
-const now = Date.now()
-await db
-  .collection('users')
-  .doc(user.uid)
-  .set(
-    {
-      uid: user.uid,
-      email,
-      displayName,
-      homeState: 'N/A',
-      accountType: 'admin',
-      orgId: null,
-      totalPoints: 0,
-      totalHoursApproved: 0,
-      currentStreakWeeks: 0,
-      longestStreakWeeks: 0,
-      lastServiceDate: null,
-      createdAt: now,
-      lastActiveAt: now,
-    },
-    { merge: true },
-  )
-console.log('Upserted Firestore users/{uid} profile with accountType: admin')
+const profileRef = db.collection('users').doc(user.uid)
+if ((await profileRef.get()).exists) {
+  await profileRef.update({ accountType: 'admin' })
+  console.log('Set accountType: admin on the existing Firestore users/{uid} profile (other fields kept)')
+} else {
+  const now = Date.now()
+  await profileRef.set({
+    uid: user.uid,
+    email,
+    displayName,
+    homeState: 'N/A',
+    accountType: 'admin',
+    orgId: null,
+    totalPoints: 0,
+    totalHoursApproved: 0,
+    currentStreakWeeks: 0,
+    longestStreakWeeks: 0,
+    lastServiceDate: null,
+    createdAt: now,
+    lastActiveAt: now,
+  })
+  console.log('Created Firestore users/{uid} profile with accountType: admin')
+}
 process.exit(0)

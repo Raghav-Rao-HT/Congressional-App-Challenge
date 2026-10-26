@@ -6,7 +6,6 @@ export const controlClasses =
   'placeholder:text-muted/70 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 ' +
   'disabled:opacity-60 aria-[invalid=true]:border-bad'
 
-// A label that wraps its control, so the two are associated without ids.
 export function Field({
   label,
   hint,

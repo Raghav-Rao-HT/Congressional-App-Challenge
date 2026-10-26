@@ -1,9 +1,5 @@
 import type { OrgAddress, OrgLocation } from '../types/models'
 
-// OpenStreetMap's free Nominatim geocoder: no API key, CORS-enabled. Its
-// usage policy allows light use (one request per second, no bulk jobs),
-// which fits one lookup per organization submission. If traffic ever
-// outgrows that, swap this one function for a paid geocoder.
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 
 export class AddressNotFoundError extends Error {

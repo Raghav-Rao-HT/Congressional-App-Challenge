@@ -11,15 +11,24 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // Trusts the custom claim (set via the Admin SDK — see
-    // scripts/setAdminClaim.mjs), never a self-writable Firestore field, so
-    // a user can't promote themselves to admin by editing their own doc.
-    function isAdmin() {
-      return isSignedIn() && request.auth.token.admin == true;
+    function isSiteOwner() {
+      return isSignedIn() && request.auth.uid == 'HAwkbqkr4rYerePOfWxdQZn7tUG3';
     }
 
-    // An approved officer of orgId — the officer-only gate used across
-    // organizations, their members subcollection, and hourLogs.
+    function hasAdminRole() {
+      let profilePath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(profilePath) && get(profilePath).data.accountType == 'admin';
+    }
+
+    function isTestAccount() {
+      let profilePath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() && exists(profilePath) && get(profilePath).data.get('isTestAccount', false) == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (request.auth.token.admin == true || isSiteOwner() || hasAdminRole());
+    }
+
     function isApprovedOfficer(orgId) {
       let memberPath = /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
       return isSignedIn() && exists(memberPath) &&
@@ -27,37 +36,17 @@ service cloud.firestore {
         get(memberPath).data.roleInOrg == 'officer';
     }
 
-    // An approved member of orgId (officers count: their own member doc is
-    // 'approved' too). Gates who can read an organization's members-only
-    // bulletin posts. The `is string` guard matters because member-authored
-    // posts have orgId == null, and a null can't be interpolated into a path.
     function isApprovedMember(orgId) {
       let memberPath = /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
       return isSignedIn() && orgId is string && exists(memberPath) &&
         get(memberPath).data.status == 'approved';
     }
 
-    // Only true for the account that originally submitted orgId — used
-    // once, to let that account bootstrap its own first officer doc
-    // (see lib/firestore/organizations.ts createOrganization, which writes
-    // the org doc before this one specifically so this get() can see it).
     function isOrgCreator(orgId) {
       return isSignedIn() &&
         get(/databases/$(database)/documents/organizations/$(orgId)).data.submittedByUid == request.auth.uid;
     }
 
-    // Phase 5: true for any signed-in, admin-approved org officer account —
-    // not scoped to one specific orgId. Used to let an approving officer
-    // write gamification side effects (points/streak/pet xp/goal progress)
-    // onto the *member's* own documents as part of hour-log sign-off (the
-    // plan's chosen "client-side write" approach — no Cloud Function
-    // recomputes this server-side). This is deliberately broader than
-    // isApprovedOfficer(orgId): confirming "an officer of the specific org
-    // on the hourLog being approved" would need that hourLog's path
-    // threaded through every one of these rules, which a plain get() can't
-    // do without it. The accepted MVP trade-off (also called out in the
-    // plan) is that any legitimate officer account, not just the matching
-    // one, could in principle write these specific fields on any member.
     function isAnyApprovedOfficer() {
       let myProfilePath = /databases/$(database)/documents/users/$(request.auth.uid);
       return isSignedIn() &&
@@ -65,42 +54,42 @@ service cloud.firestore {
         get(myProfilePath).data.orgId != null;
     }
 
-    // Phase 1: member/org-officer/admin profile, created at signup.
-    // accountType and uid are immutable after creation so a user can't
-    // promote themselves (e.g. to 'admin') via a later update. Phase 4
-    // exception: an admin may touch only the orgId field on someone else's
-    // profile, to mark an org officer's org as approved, and leaderboardHidden,
-    // to take a member off the leaderboard. Phase 5 exception:
-    // any approved org officer may touch only the gamification aggregate
-    // fields (see isAnyApprovedOfficer above).
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isOwner(uid) && request.resource.data.uid == uid;
+      allow create: if isOwner(uid) && request.resource.data.uid == uid &&
+        request.resource.data.accountType in ['member', 'organization_officer'] &&
+        request.resource.data.get('isTestAccount', false) == false &&
+        !('roleBeforeAdmin' in request.resource.data);
       allow update: if (isOwner(uid) &&
         request.resource.data.accountType == resource.data.accountType &&
-        request.resource.data.uid == resource.data.uid) ||
+        request.resource.data.uid == resource.data.uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isTestAccount', 'roleBeforeAdmin'])) ||
         (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgId', 'leaderboardHidden'])) ||
+        (isSiteOwner() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isTestAccount']) &&
+          request.resource.data.isTestAccount is bool &&
+          resource.data.accountType in ['member', 'organization_officer']) ||
+        (isSiteOwner() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['accountType', 'roleBeforeAdmin']) &&
+          ((resource.data.accountType in ['member', 'organization_officer'] &&
+              request.resource.data.accountType == 'admin' &&
+              request.resource.data.roleBeforeAdmin == resource.data.accountType) ||
+            (resource.data.accountType == 'admin' &&
+              request.resource.data.accountType in ['member', 'organization_officer'] &&
+              !('roleBeforeAdmin' in request.resource.data)))) ||
         (isAnyApprovedOfficer() && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['totalPoints', 'totalHoursApproved', 'currentStreakWeeks', 'longestStreakWeeks', 'lastServiceDate']));
       allow delete: if false;
 
-      // Phase 5: a pet is private to its member; only an approved officer
-      // (growing it on hour-log approval) writes to it, and needs read
-      // access too — growPet() does a read-then-write to compute new xp.
       match /pets/{orgId} {
         allow read: if isOwner(uid) || isAnyApprovedOfficer();
-        allow write: if isAnyApprovedOfficer();
+        allow write: if isAnyApprovedOfficer() || (isOwner(uid) && isTestAccount());
       }
 
-      // Phase 5: a member's personal island layout (pet positions) — purely
-      // their own, no officer involvement.
       match /island/{docId} {
         allow read, write: if isOwner(uid);
       }
 
-      // Phase 5: a member defines/removes their own goals; an approved
-      // officer may update only progress-tracking fields when an approval
-      // advances them.
       match /goals/{goalId} {
         allow read: if isOwner(uid) || isAnyApprovedOfficer();
         allow create, delete: if isOwner(uid);
@@ -110,64 +99,50 @@ service cloud.firestore {
       }
     }
 
-    // Phase 3/4: an org officer submits their org (status always starts
-    // 'pending') and can edit its profile fields afterward, but not its own
-    // status — only an admin can approve/reject it.
     match /organizations/{orgId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() &&
         request.resource.data.submittedByUid == request.auth.uid &&
-        request.resource.data.status == 'pending';
+        (request.resource.data.status == 'pending' ||
+          (request.resource.data.status == 'approved' && isTestAccount()));
       allow update: if isAdmin() ||
         (isApprovedOfficer(orgId) && request.resource.data.status == resource.data.status);
       allow delete: if false;
 
-      // Phase 3: a member can self-apply (or re-apply); only an approved
-      // officer of this org can approve/reject applications or update
-      // roster hours. The org creator's own first 'officer' doc is a
-      // one-time bootstrap (see isOrgCreator) since isApprovedOfficer is
-      // necessarily false before that doc exists.
       match /members/{memberUid} {
         allow read: if isSignedIn();
         allow create: if isOwner(memberUid) && (
           (request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member') ||
-          (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'officer' && isOrgCreator(orgId))
+          (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'officer' && isOrgCreator(orgId)) ||
+          (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'member' && isTestAccount())
         );
         allow update: if isApprovedOfficer(orgId) ||
-          (isOwner(memberUid) && request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member');
+          (isOwner(memberUid) && request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member') ||
+          (isOwner(memberUid) && isTestAccount() && resource.data.roleInOrg == 'member' &&
+            request.resource.data.roleInOrg == 'member' && request.resource.data.status == 'approved');
         allow delete: if false;
       }
     }
 
-    // A collectionGroup('members') query (used by getMyApplications, so a
-    // member can see their application status across every org) spans every
-    // orgId and needs its own {path=**} rule — the nested match above only
-    // authorizes reads/writes scoped to one already-known orgId.
     match /{path=**}/members/{memberUid} {
       allow read: if isSignedIn();
     }
 
-    // Phase 2/3: a member creates/edits/deletes their own pending hour
-    // logs; an approved officer of the log's org can read it and transition
-    // it from pending to approved/rejected (digital sign-off). Points/
-    // streak/pet side effects on top of that transition land in Phase 5.
-    // Hours can only be logged for an organization the member has joined
-    // (an approved member): the organization signs them off, and approval
-    // needs that membership record to update the roster.
     match /hourLogs/{logId} {
       allow read: if isOwner(resource.data.memberUid) || isApprovedOfficer(resource.data.orgId);
       allow create: if isOwner(request.resource.data.memberUid) &&
-        request.resource.data.status == 'pending' &&
-        isApprovedMember(request.resource.data.orgId);
+        isApprovedMember(request.resource.data.orgId) &&
+        (request.resource.data.status == 'pending' ||
+          (request.resource.data.status == 'approved' && isTestAccount()));
       allow update: if
-        (isOwner(resource.data.memberUid) && resource.data.status == 'pending' && request.resource.data.status == 'pending') ||
-        (isApprovedOfficer(resource.data.orgId) && resource.data.status == 'pending' && request.resource.data.status in ['approved', 'rejected']);
+        (isOwner(resource.data.memberUid) && resource.data.status == 'pending' && request.resource.data.status == 'pending' &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['replyImageURL', 'replyAt'])) ||
+        (isApprovedOfficer(resource.data.orgId) && resource.data.status == 'pending' && request.resource.data.status in ['approved', 'rejected']) ||
+        (isApprovedOfficer(resource.data.orgId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyImageURL', 'replyAt']));
       allow delete: if isOwner(resource.data.memberUid) && resource.data.status == 'pending';
     }
 
-    // Phase 6: either participant can read; only the requester can create
-    // (as 'pending'); only the recipient can accept/decline. No cancel or
-    // unfriend action in this MVP.
     match /friendships/{friendshipId} {
       allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
       allow create: if isSignedIn() &&
@@ -180,42 +155,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Phase 7: any signed-in user can post as themselves; posting as an
-    // organization requires being that org's approved officer, and only
-    // org posts can be 'members' only. Public posts are readable by everyone
-    // signed in; members-only posts only by the org's approved members. The
-    // poster can later change only the approved-RSVP count and the post's
-    // status.
-    //
-    // Deliberately NO default for a missing audience (e.g. .get('audience',
-    // 'public')): when Firestore checks a *query* it only knows the fields
-    // the query filters on, so a default would count as 'public' and let any
-    // query without an audience filter list members-only posts. Posts that
-    // predate the audience field must be backfilled with audience: 'public'.
-    //
-    // Admins moderate events: they can read every post (including members-only
-    // ones) and delete a post together with its RSVPs. isAdmin() comes first in
-    // each check so it settles the request before any get() of a post that may
-    // already be deleted.
     match /bulletinPosts/{postId} {
       allow read: if isSignedIn() &&
         (isAdmin() || resource.data.audience == 'public' || isApprovedMember(resource.data.orgId));
       allow create: if isOwner(request.resource.data.authorUid) &&
         request.resource.data.status == 'open' &&
+        request.resource.data.offersServiceHours is bool &&
         request.resource.data.approvedCount == 0 &&
         (request.resource.data.authorType == 'member' ||
           (request.resource.data.orgId is string && isApprovedOfficer(request.resource.data.orgId))) &&
         (request.resource.data.audience == 'public' ||
           (request.resource.data.audience == 'members' && request.resource.data.authorType == 'org'));
-      allow update: if isOwner(resource.data.authorUid) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount', 'status']);
+      allow update: if (isOwner(resource.data.authorUid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount', 'status'])) ||
+        (isTestAccount() && resource.data.status == 'open' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount']) &&
+          request.resource.data.approvedCount == resource.data.approvedCount + 1);
       allow delete: if isAdmin();
 
-      // RSVPs: a person asks to join (always 'pending'), the poster approves
-      // or declines. The poster can't RSVP to their own post, and for
-      // members-only posts only approved members can RSVP. A person may
-      // withdraw their own RSVP until it is approved; after that only the
-      // poster can remove it, so the poster's approved count stays right.
       match /rsvps/{rsvpUid} {
         function post() {
           return get(/databases/$(database)/documents/bulletinPosts/$(postId)).data;
@@ -225,8 +182,8 @@ service cloud.firestore {
           (isAdmin() || isOwner(rsvpUid) || isOwner(post().authorUid) || resource.data.status == 'approved');
         allow create: if isOwner(rsvpUid) &&
           request.resource.data.uid == rsvpUid &&
-          request.resource.data.status == 'pending' &&
-          request.resource.data.decidedAt == null &&
+          ((request.resource.data.status == 'pending' && request.resource.data.decidedAt == null) ||
+            (request.resource.data.status == 'approved' && request.resource.data.decidedAt is int && isTestAccount())) &&
           post().status == 'open' &&
           post().authorUid != rsvpUid &&
           (post().get('audience', 'public') == 'public' || isApprovedMember(post().orgId));
@@ -239,8 +196,6 @@ service cloud.firestore {
       }
     }
 
-    // Everything else is added phase-by-phase as its real write patterns
-    // are built, rather than guessed at up front. Default deny.
     match /{document=**} {
       allow read, write: if false;
     }

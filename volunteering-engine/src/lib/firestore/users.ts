@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, deleteField, doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import type { AccountType, UserProfile } from '../../types/models'
 
@@ -39,9 +39,33 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   return snapshot.data() as UserProfile
 }
 
-// Admin only (the security rules allow an admin to touch just this field and
-// orgId on someone else's profile). Hiding is reversible and keeps the
-// member's points, hours and account intact.
 export async function setLeaderboardHidden(uid: string, hidden: boolean): Promise<void> {
   await updateDoc(doc(db, 'users', uid), { leaderboardHidden: hidden })
+}
+
+export function subscribeAllUsers(
+  onChange: (users: UserProfile[]) => void,
+  onError: (error: Error) => void,
+): () => void {
+  return onSnapshot(
+    collection(db, 'users'),
+    (snapshot) => onChange(snapshot.docs.map((d) => d.data() as UserProfile)),
+    onError,
+  )
+}
+
+export async function makeAdmin(user: UserProfile): Promise<void> {
+  if (user.accountType !== 'member' && user.accountType !== 'organization_officer') return
+  await updateDoc(doc(db, 'users', user.uid), { accountType: 'admin', roleBeforeAdmin: user.accountType })
+}
+
+export async function removeAdmin(user: UserProfile): Promise<void> {
+  await updateDoc(doc(db, 'users', user.uid), {
+    accountType: user.roleBeforeAdmin ?? 'member',
+    roleBeforeAdmin: deleteField(),
+  })
+}
+
+export async function setTestAccount(uid: string, isTestAccount: boolean): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { isTestAccount })
 }

@@ -1,12 +1,11 @@
 import { CircleCheck, Hourglass } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useAuth } from '../../context/AuthProvider'
 import { cancelRsvp, rsvpToPost, subscribeMyRsvp } from '../../lib/firestore/rsvps'
 import type { Rsvp } from '../../types/models'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 
-// The RSVP button for someone who isn't the poster: RSVP, then wait for the
-// poster's approval, with a way to withdraw while still pending.
 export function RsvpControl({
   postId,
   uid,
@@ -16,6 +15,7 @@ export function RsvpControl({
   uid: string
   displayName: string
 }) {
+  const { profile } = useAuth()
   const [rsvp, setRsvp] = useState<Rsvp | null | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -35,7 +35,6 @@ export function RsvpControl({
     }
   }
 
-  // Still loading this person's RSVP; render nothing rather than flash "RSVP".
   if (rsvp === undefined) return null
 
   return (
@@ -43,7 +42,10 @@ export function RsvpControl({
       {rsvp === null && (
         <Button
           loading={busy}
-          onClick={() => run(() => rsvpToPost({ postId, uid, displayName }), 'Could not send your RSVP. Try again.')}
+          onClick={() => run(
+              () => rsvpToPost({ postId, uid, displayName, autoApprove: !!profile?.isTestAccount }),
+              'Could not send your RSVP. Try again.',
+            )}
         >
           {busy ? 'Sending…' : 'RSVP'}
         </Button>

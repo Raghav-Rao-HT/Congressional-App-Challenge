@@ -7,10 +7,6 @@ export interface StreakUpdate {
   bonusPoints: number
 }
 
-// A "service week" (Monday-start) counts once a member has >=1 approved
-// hour log in it. Consecutive active weeks increment the streak; a skipped
-// week resets it to 1. Multiple approvals in the same week are a no-op here
-// (weekDiff === 0) so the streak isn't double-counted.
 export function applyStreakUpdate(params: {
   lastServiceDate: string | null
   currentStreakWeeks: number

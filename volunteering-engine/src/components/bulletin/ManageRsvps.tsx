@@ -12,14 +12,12 @@ const statusTone: Record<Rsvp['status'], BadgeTone> = {
   declined: 'neutral',
 }
 
-// The poster's panel: everyone who asked to join, with approve/decline.
 export function ManageRsvps({ postId }: { postId: string }) {
   const [open, setOpen] = useState(false)
   const [rsvps, setRsvps] = useState<Rsvp[]>([])
   const [busyUid, setBusyUid] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Subscribed even while collapsed so the pending count on the toggle is live.
   useEffect(() => subscribePostRsvps(postId, setRsvps), [postId])
 
   const pendingCount = rsvps.filter((r) => r.status === 'pending').length

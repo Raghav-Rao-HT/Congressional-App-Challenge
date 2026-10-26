@@ -12,8 +12,6 @@ import { subscribeApprovedOrganizations } from '../../lib/firestore/organization
 import { isInNewJersey, NJ_BOUNDS } from '../../lib/newJersey'
 import type { Organization, OrgLocation } from '../../types/models'
 
-// A brand-colored pin drawn as inline SVG (static markup, no user data), so
-// it matches the theme and needs no image files.
 const markerImage = L.divIcon({
   className: '',
   html: `<svg width="34" height="44" viewBox="0 0 34 44" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -27,7 +25,6 @@ const markerImage = L.divIcon({
   tooltipAnchor: [18, -22],
 })
 
-// A little room around the state so edge markers aren't flush to the border.
 const PAN_LIMIT: [[number, number], [number, number]] = [
   [NJ_BOUNDS[0][0] - 0.4, NJ_BOUNDS[0][1] - 0.4],
   [NJ_BOUNDS[1][0] + 0.4, NJ_BOUNDS[1][1] + 0.4],
@@ -35,8 +32,6 @@ const PAN_LIMIT: [[number, number], [number, number]] = [
 
 type MappedOrg = Organization & { location: OrgLocation }
 
-// Website values come from user input; only http(s) links are made clickable
-// so a "javascript:" URL can never become a link.
 function safeHttpUrl(value: string): string | null {
   return /^https?:\/\//i.test(value) ? value : null
 }
@@ -124,8 +119,6 @@ function OrgPopup({
   )
 }
 
-// Names are always visible once zoomed in far enough to tell neighbors apart;
-// zoomed out to the whole state they would pile up, so they show on hover.
 const ALWAYS_LABEL_ZOOM = 9
 
 function OrgMarkers({
@@ -175,8 +168,6 @@ export function NewJerseyMapPage() {
 
   useEffect(() => subscribeApprovedOrganizations(setOrgs), [])
 
-  // Only approved organizations are public, and only those that were located
-  // inside New Jersey get a marker.
   const mapped = useMemo(
     () => orgs.filter((org): org is MappedOrg => !!org.location && isInNewJersey(org.location)),
     [orgs],

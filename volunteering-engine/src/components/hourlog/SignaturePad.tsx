@@ -14,18 +14,11 @@ export const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad
     getDataUrl: () => {
       const canvas = canvasRef.current
       if (!canvas || canvas.isEmpty()) return null
-      // Deliberately not getTrimmedCanvas(): its trim-canvas dependency has a
-      // broken CJS/ESM default-export interop under Vite's esbuild
-      // pre-bundler ("import_build.default is not a function"). Untrimmed
-      // output just has some blank padding around the signature — fine for
-      // MVP sign-off.
       return canvas.toDataURL('image/png')
     },
     clear: () => canvasRef.current?.clear(),
   }))
 
-  // Always white, even in dark mode: the pen is black, so it needs a light
-  // surface to be visible while signing.
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-white shadow-sm">
       <SignatureCanvas

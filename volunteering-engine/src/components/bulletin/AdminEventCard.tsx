@@ -4,9 +4,8 @@ import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { DateBadge } from './DateBadge'
+import { ServiceHoursBadge } from './ServiceHoursBadge'
 
-// An event as an admin sees it, with a two-step delete: the first click asks
-// "are you sure?" in place, the second one deletes.
 export function AdminEventCard({
   post,
   confirming,
@@ -38,6 +37,7 @@ export function AdminEventCard({
             <Badge tone={post.authorType === 'org' ? 'brand' : 'neutral'}>
               {post.authorType === 'org' ? 'Organization' : 'Volunteer'}
             </Badge>
+            <ServiceHoursBadge offers={post.offersServiceHours} />
             {post.status !== 'open' && (
               <Badge tone="warn" className="capitalize">
                 {post.status}

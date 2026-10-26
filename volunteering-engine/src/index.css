@@ -1,12 +1,6 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/inter';
+@import '@fontsource-variable/montserrat';
 
-/*
- * Design tokens. Surfaces, text and status colors are CSS variables so the
- * whole app is themed from one place; components use the semantic utilities
- * (bg-surface, text-fg, border-line, ...). The app is light-only: the pet art
- * (a black gorilla, transparent backgrounds) is drawn for a white page.
- */
 :root {
   --canvas: #ffffff;
   --surface: #ffffff;
@@ -30,7 +24,7 @@
 }
 
 @theme inline {
-  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Montserrat Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -72,6 +66,15 @@
   --radius-card: 1.25rem;
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 700 !important;
+}
+
 @layer base {
   html {
     color-scheme: light;
@@ -81,8 +84,7 @@
   body {
     background-color: var(--canvas);
     color: var(--fg);
-    font-family: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-    font-feature-settings: 'cv11', 'ss01';
+    font-family: 'Montserrat Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
   }
@@ -98,13 +100,8 @@
   }
 }
 
-/*
- * Leaflet: match the map chrome to the theme.
- * Everything is scoped under .leaflet-container so these rules out-rank
- * Leaflet's own stylesheet, which is loaded after this one.
- */
 .leaflet-container {
-  font-family: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Montserrat Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   background: var(--surface-2);
 }
 .leaflet-container .leaflet-popup-content-wrapper,
@@ -148,7 +145,6 @@
 .leaflet-container .leaflet-control-attribution.leaflet-control a {
   color: var(--info);
 }
-/* Island page: the island and its pets float, clouds and waves drift, stars twinkle. */
 @keyframes island-float {
   0%,
   100% {
@@ -185,6 +181,23 @@
     opacity: 1;
   }
 }
+@keyframes island-hop {
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  30% {
+    transform: translateY(-9%) scale(0.96, 1.06);
+  }
+  60% {
+    transform: translateY(0) scale(1.06, 0.94);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+.island-hop {
+  animation: island-hop 0.45s ease-out;
+}
 .island-float {
   animation: island-float 7s ease-in-out infinite;
 }
@@ -198,6 +211,81 @@
   animation: island-twinkle 3s ease-in-out infinite;
 }
 
+@keyframes play-walk {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-4%) rotate(-1.5deg);
+  }
+  75% {
+    transform: translateY(-4%) rotate(1.5deg);
+  }
+}
+@keyframes play-munch {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.03, 0.96);
+  }
+}
+@keyframes play-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.02, 1.035);
+  }
+}
+@keyframes play-zzz {
+  0% {
+    opacity: 0;
+    transform: translate(0, 6px) scale(0.7);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(10px, -26px) scale(1.15);
+  }
+}
+@keyframes play-heart {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.5);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-34px) scale(1.1);
+  }
+}
+.play-walk {
+  animation: play-walk 0.38s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+.play-munch {
+  animation: play-munch 0.3s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+.play-breathe {
+  animation: play-breathe 3.2s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+.play-zzz {
+  animation: play-zzz 2.4s ease-out infinite;
+}
+.play-heart {
+  animation: play-heart 1.5s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -206,5 +294,50 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+.pet-shine {
+  background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / 0.85) 50%, transparent 62%);
+  background-size: 300% 100%;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  animation: pet-shine 3.6s ease-in-out infinite;
+}
+@keyframes pet-shine {
+  0% {
+    background-position: 100% 0;
+  }
+  50%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+.pet-rainbow {
+  animation: pet-rainbow 7s linear infinite;
+}
+@keyframes pet-rainbow {
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+.gem-twinkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gem-twinkle 2.2s ease-in-out infinite;
+}
+@keyframes gem-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.3) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
   }
 }

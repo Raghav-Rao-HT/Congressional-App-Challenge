@@ -2,15 +2,10 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Phase 2: a member uploads hour-sheet attachments under their own uid.
     match /hourSheets/{memberUid}/{logId}/{fileName} {
       allow read, write: if request.auth != null && request.auth.uid == memberUid;
     }
 
-    // Phase 3: an org officer uploads their sign-off signature. Per the
-    // plan, precise per-org officer enforcement at the Storage layer is a
-    // later hardening item — the Firestore-side officer check gating the
-    // matching hourLogs status transition is the primary defense in MVP.
     match /signatures/{orgId}/{logId} {
       allow read, write: if request.auth != null;
     }

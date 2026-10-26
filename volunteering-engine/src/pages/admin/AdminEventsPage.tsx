@@ -48,8 +48,6 @@ export function AdminEventsPage() {
     }
   }
 
-  // An event is "past" once it has ended. Upcoming ones read soonest first,
-  // past ones most recent first.
   const shown = (posts ?? [])
     .filter((post) => (tab === 'upcoming') === (post.endAt >= now))
     .sort((a, b) => (tab === 'upcoming' ? a.startAt - b.startAt : b.startAt - a.startAt))

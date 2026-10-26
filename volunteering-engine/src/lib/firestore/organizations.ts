@@ -26,16 +26,11 @@ export async function createOrganization(params: {
   causeArea: string
   nonprofitType: string | null
   irsClassification: string | null
+  autoApprove?: boolean
 }): Promise<string> {
   const orgRef = doc(collection(db, 'organizations'))
   const now = Date.now()
 
-  // Two sequential writes rather than one atomic batch: the security rule
-  // for the officer doc below confirms org ownership via a get() on the org
-  // document, which needs the org doc to already be committed to read back.
-  // A crash between these two writes leaves an org with no officer — an
-  // acceptable, recoverable MVP edge case over the added complexity of
-  // reconciling that inside a transaction.
   await setDoc(orgRef, {
     orgId: orgRef.id,
     name: params.name,
@@ -48,10 +43,10 @@ export async function createOrganization(params: {
     causeArea: params.causeArea,
     nonprofitType: params.nonprofitType,
     irsClassification: params.irsClassification,
-    status: 'pending',
+    status: params.autoApprove ? 'approved' : 'pending',
     submittedByUid: params.submittedByUid,
     createdAt: now,
-    reviewedAt: null,
+    reviewedAt: params.autoApprove ? now : null,
     reviewedByAdminUid: null,
     rejectionReason: null,
     memberCount: 1,
@@ -68,6 +63,8 @@ export async function createOrganization(params: {
     approvedByUid: params.submittedByUid,
     totalHoursApprovedForOrg: 0,
   } satisfies OrgMember)
+
+  if (params.autoApprove) await updateDoc(doc(db, 'users', params.submittedByUid), { orgId: orgRef.id })
 
   return orgRef.id
 }
@@ -105,16 +102,18 @@ export async function applyToOrganization(params: {
   orgId: string
   uid: string
   displayName: string
+  autoApprove?: boolean
 }): Promise<void> {
   const ref = doc(db, 'organizations', params.orgId, 'members', params.uid)
+  const now = Date.now()
   await setDoc(ref, {
     uid: params.uid,
     displayName: params.displayName,
-    status: 'applied',
+    status: params.autoApprove ? 'approved' : 'applied',
     roleInOrg: 'member',
-    appliedAt: Date.now(),
-    approvedAt: null,
-    approvedByUid: null,
+    appliedAt: now,
+    approvedAt: params.autoApprove ? now : null,
+    approvedByUid: params.autoApprove ? params.uid : null,
     totalHoursApprovedForOrg: 0,
   } satisfies OrgMember)
 }
@@ -174,9 +173,6 @@ export async function approveOrganization(params: {
     reviewedByAdminUid: params.adminUid,
     rejectionReason: null,
   })
-  // Admin-only exception on users/{uid}: the rules allow an admin to touch
-  // only this one field, so an org's officer learns their org is approved
-  // without otherwise being able to edit each other's profiles.
   await updateDoc(doc(db, 'users', params.submittedByUid), {
     orgId: params.orgId,
   })

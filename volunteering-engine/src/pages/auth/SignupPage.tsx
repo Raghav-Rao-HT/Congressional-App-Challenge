@@ -34,8 +34,6 @@ const schema = z
   })
   .superRefine((values, ctx) => {
     if (values.accountType !== 'organization_officer') return
-    // Organizations must say what kind of nonprofit they are and how the IRS
-    // classifies them; "Other" in either list needs the text filled in.
     const required: [string, string, 'nonprofitType' | 'irsClassification', string, string][] = [
       [values.nonprofitType, values.nonprofitTypeOther, 'nonprofitType', 'Choose your type of nonprofit', 'Tell us what type of nonprofit you are'],
       [values.irsClassification, values.irsClassificationOther, 'irsClassification', 'Choose your IRS classification', 'Enter your IRS classification, e.g. 501(c)(12)'],

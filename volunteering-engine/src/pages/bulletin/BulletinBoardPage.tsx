@@ -3,18 +3,24 @@ import { useState } from 'react'
 import { DateBadge } from '../../components/bulletin/DateBadge'
 import { ManageRsvps } from '../../components/bulletin/ManageRsvps'
 import { RsvpControl } from '../../components/bulletin/RsvpControl'
+import { ServiceHoursBadge } from '../../components/bulletin/ServiceHoursBadge'
 import { Badge } from '../../components/ui/Badge'
 import { ButtonLink } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Field'
 import { EmptyState, Page, PageHeader } from '../../components/ui/Page'
+import { Tabs } from '../../components/ui/Tabs'
 import { useAuth } from '../../context/AuthProvider'
 import { useBulletinPosts } from '../../hooks/useBulletinPosts'
+
+type HoursFilter = 'all' | 'hours'
 
 export function BulletinBoardPage() {
   const { user, profile } = useAuth()
   const [stateFilter, setStateFilter] = useState('')
-  const posts = useBulletinPosts(stateFilter)
+  const [hoursFilter, setHoursFilter] = useState<HoursFilter>('all')
+  const allPosts = useBulletinPosts(stateFilter)
+  const posts = hoursFilter === 'hours' ? allPosts.filter((post) => post.offersServiceHours === true) : allPosts
 
   return (
     <Page width="narrow">
@@ -29,24 +35,38 @@ export function BulletinBoardPage() {
         }
       />
 
-      <label className="relative block max-w-xs">
-        <span className="sr-only">Filter by state</span>
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
-        <Input
-          value={stateFilter}
-          onChange={(e) => setStateFilter(e.target.value.toUpperCase())}
-          placeholder="Filter by state, e.g. NJ"
-          maxLength={2}
-          className="pl-10"
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="relative block w-full max-w-xs">
+          <span className="sr-only">Filter by state</span>
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
+          <Input
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value.toUpperCase())}
+            placeholder="Filter by state, e.g. NJ"
+            maxLength={2}
+            className="pl-10"
+          />
+        </label>
+        <Tabs
+          tabs={[
+            { value: 'all', label: 'All events' },
+            { value: 'hours', label: 'Service hours' },
+          ]}
+          value={hoursFilter}
+          onChange={setHoursFilter}
         />
-      </label>
+      </div>
 
       {posts.length === 0 ? (
         <div className="mt-6">
           <EmptyState
             icon={Megaphone}
-            title="No upcoming opportunities yet"
-            description="Be the first to post one, or check back soon."
+            title={hoursFilter === 'hours' ? 'No events with service hours right now' : 'No upcoming opportunities yet'}
+            description={
+              hoursFilter === 'hours'
+                ? 'Switch to all events to see everything, or check back soon.'
+                : 'Be the first to post one, or check back soon.'
+            }
           />
         </div>
       ) : (
@@ -70,6 +90,7 @@ export function BulletinBoardPage() {
                         <Badge tone={post.authorType === 'org' ? 'brand' : 'neutral'}>
                           {post.authorType === 'org' ? 'Organization' : 'Volunteer'}
                         </Badge>
+                        <ServiceHoursBadge offers={post.offersServiceHours} />
                       </div>
                       <p className="mt-1.5 text-pretty text-muted">{post.description}</p>
 

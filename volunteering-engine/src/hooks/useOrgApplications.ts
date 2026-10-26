@@ -3,15 +3,10 @@ import { useAuth } from '../context/AuthProvider'
 import { applyToOrganization, getMyApplications } from '../lib/firestore/organizations'
 import type { OrgMemberStatus } from '../types/models'
 
-// The signed-in member's application status per organization, plus an
-// apply() that joins one. Shared by the dashboard list, the map popups, the
-// bulletin board and the log-hours form.
 export function useOrgApplications() {
   const { user, profile } = useAuth()
   const [applications, setApplications] = useState<Record<string, OrgMemberStatus>>({})
   const [applyingTo, setApplyingTo] = useState<string | null>(null)
-  // 'loading' until the first lookup finishes, so callers can tell "not
-  // loaded yet" apart from "hasn't joined anything".
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
 
   useEffect(() => {
@@ -35,8 +30,9 @@ export function useOrgApplications() {
     if (!user || !profile) return
     setApplyingTo(orgId)
     try {
-      await applyToOrganization({ orgId, uid: user.uid, displayName: profile.displayName })
-      setApplications((prev) => ({ ...prev, [orgId]: 'applied' }))
+      const autoApprove = !!profile.isTestAccount
+      await applyToOrganization({ orgId, uid: user.uid, displayName: profile.displayName, autoApprove })
+      setApplications((prev) => ({ ...prev, [orgId]: autoApprove ? 'approved' : 'applied' }))
     } finally {
       setApplyingTo(null)
     }

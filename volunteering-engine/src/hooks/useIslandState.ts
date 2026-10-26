@@ -6,9 +6,6 @@ import type { PetLook } from '../types/models'
 
 const NONE: Record<string, never> = {}
 
-// The signed-in member's island: where each pet stands and how it is dressed,
-// live from Firestore, with actions to change them. Firestore applies a write
-// to the live data immediately, so the screen updates before the save finishes.
 export function useIslandState() {
   const { user } = useAuth()
   const uid = user?.uid
@@ -31,7 +28,6 @@ export function useIslandState() {
     )
   }, [uid])
 
-  // Runs a save and reports a failure (the live data then reverts on its own).
   const save = useCallback((write: Promise<void>, failure: string) => {
     setError(null)
     write.catch((err) => {

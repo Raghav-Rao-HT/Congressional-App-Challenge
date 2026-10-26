@@ -25,13 +25,11 @@ export function LeaderboardPage() {
   const [adminError, setAdminError] = useState<string | null>(null)
   const { ranked: friendsRanked } = useFriendsRanking(user?.uid)
 
-  // Admins also receive the hidden members, so they can restore them.
   useEffect(
     () => subscribeTopMembers(setMembers, { state: stateFilter || undefined, includeHidden: isAdmin }),
     [stateFilter, isAdmin],
   )
 
-  // Hidden members are unranked: ranks count only the members still on the board.
   let nextRank = 1
   const rows = members.map((member) => ({ member, rank: member.leaderboardHidden ? null : nextRank++ }))
 

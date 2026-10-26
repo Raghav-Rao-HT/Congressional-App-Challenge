@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from './Card'
 
-// A tappable tile that links to a feature: icon, title, one-line description.
 export function ActionCard({
   to,
   icon: Icon,

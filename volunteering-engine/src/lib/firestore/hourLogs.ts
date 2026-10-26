@@ -9,8 +9,9 @@ import {
   setDoc,
   updateDoc,
   where,
+  type Transaction,
 } from 'firebase/firestore'
-import { ApprovalError, planApproval } from '../approval'
+import { ApprovalError, planApproval, type ApprovalPlan } from '../approval'
 import { db } from '../firebase'
 import { getPetSpecies } from '../petVisuals'
 import { getActiveGoalsForMember } from './goals'
@@ -18,27 +19,26 @@ import type { Goal, HourLog, OrgMember, Pet, UserProfile } from '../../types/mod
 
 const MAX_SIGNATURE_DATA_URL_LENGTH = 300_000
 
-export async function submitHourLog(params: {
+interface SubmitHourLogParams {
   memberUid: string
   orgId: string
   petId: string
   date: string
   hours: number
   description: string
-}): Promise<void> {
-  const logRef = doc(collection(db, 'hourLogs'))
+  attachment?: string | null
+}
 
-  // File attachments aren't supported: the project has no Cloud Storage
-  // bucket (Spark plan), so the field stays as an always-empty list.
-  await setDoc(logRef, {
-    logId: logRef.id,
+function newHourLog(logId: string, params: SubmitHourLogParams): HourLog {
+  return {
+    logId,
     memberUid: params.memberUid,
     orgId: params.orgId,
     petId: params.petId,
     date: params.date,
     hours: params.hours,
     description: params.description,
-    attachmentURLs: [],
+    attachmentURLs: params.attachment ? [params.attachment] : [],
     status: 'pending',
     submittedAt: Date.now(),
     reviewedAt: null,
@@ -46,7 +46,76 @@ export async function submitHourLog(params: {
     rejectionReason: null,
     signatureURL: null,
     pointsAwarded: null,
-  } satisfies HourLog)
+    replyImageURL: null,
+    replyAt: null,
+  }
+}
+
+export async function submitHourLog(params: SubmitHourLogParams): Promise<void> {
+  const logRef = doc(collection(db, 'hourLogs'))
+  await setDoc(logRef, newHourLog(logRef.id, params))
+}
+
+function applyApprovalPlan(
+  tx: Transaction,
+  params: { memberUid: string; orgId: string; hours: number },
+  plan: ApprovalPlan,
+) {
+  tx.update(doc(db, 'organizations', params.orgId, 'members', params.memberUid), {
+    totalHoursApprovedForOrg: increment(params.hours),
+  })
+  tx.set(doc(db, 'users', params.memberUid, 'pets', plan.pet.species), plan.pet, { merge: true })
+  for (const result of plan.goals) {
+    tx.update(doc(db, 'users', params.memberUid, 'goals', result.goalId), {
+      progressHours: result.progressHours,
+      status: result.status,
+      bonusPointsAwarded: result.bonusPointsAwarded,
+      bonusAmount: result.bonusAmount,
+    })
+  }
+  tx.update(doc(db, 'users', params.memberUid), plan.member)
+}
+
+export async function submitAutoApprovedHourLog(params: SubmitHourLogParams): Promise<void> {
+  const logRef = doc(collection(db, 'hourLogs'))
+  const petId = getPetSpecies(params.petId).id
+  const goalCandidates = await getActiveGoalsForMember(params.memberUid, params.orgId)
+
+  await runTransaction(db, async (tx) => {
+    const membershipRef = doc(db, 'organizations', params.orgId, 'members', params.memberUid)
+    const userRef = doc(db, 'users', params.memberUid)
+    const petRef = doc(db, 'users', params.memberUid, 'pets', petId)
+
+    const [membershipSnap, userSnap, petSnap] = await Promise.all([tx.get(membershipRef), tx.get(userRef), tx.get(petRef)])
+    const goalSnaps = await Promise.all(
+      goalCandidates.map((goal) => tx.get(doc(db, 'users', params.memberUid, 'goals', goal.goalId))),
+    )
+
+    const log = newHourLog(logRef.id, { ...params, petId })
+    const now = Date.now()
+    const plan = planApproval({
+      hours: params.hours,
+      date: params.date,
+      petId,
+      orgId: params.orgId,
+      logStatus: log.status,
+      membershipStatus: membershipSnap.exists() ? (membershipSnap.data() as OrgMember).status : null,
+      member: userSnap.exists() ? (userSnap.data() as UserProfile) : null,
+      pet: petSnap.exists() ? (petSnap.data() as Pet) : null,
+      goals: goalSnaps.filter((snap) => snap.exists()).map((snap) => snap.data() as Goal),
+      now,
+    })
+
+    tx.set(logRef, {
+      ...log,
+      status: 'approved',
+      reviewedAt: now,
+      reviewedByUid: params.memberUid,
+      pointsAwarded: plan.pointsAwarded,
+      autoApproved: true,
+    } satisfies HourLog)
+    applyApprovalPlan(tx, params, plan)
+  })
 }
 
 export function subscribeMyHourLogs(memberUid: string, onChange: (logs: HourLog[]) => void): () => void {
@@ -58,6 +127,27 @@ export function subscribeMyHourLogs(memberUid: string, onChange: (logs: HourLog[
   return onSnapshot(q, (snapshot) => {
     onChange(snapshot.docs.map((d) => d.data() as HourLog))
   })
+}
+
+export function subscribeOrgReviewedHourLogs(orgId: string, onChange: (logs: HourLog[]) => void, max = 10): () => void {
+  const byStatus: Record<string, HourLog[]> = { approved: [], rejected: [] }
+  const publish = () =>
+    onChange([...byStatus.approved, ...byStatus.rejected].sort((a, b) => (b.reviewedAt ?? 0) - (a.reviewedAt ?? 0)).slice(0, max))
+  const listeners = (['approved', 'rejected'] as const).map((status) =>
+    onSnapshot(
+      query(collection(db, 'hourLogs'), where('orgId', '==', orgId), where('status', '==', status)),
+      (snapshot) => {
+        byStatus[status] = snapshot.docs.map((d) => d.data() as HourLog)
+        publish()
+      },
+      (error) => console.error(`Reviewed ${status} hour logs failed:`, error),
+    ),
+  )
+  return () => listeners.forEach((unsubscribe) => unsubscribe())
+}
+
+export async function sendReplyImage(logId: string, dataUrl: string): Promise<void> {
+  await updateDoc(doc(db, 'hourLogs', logId), { replyImageURL: dataUrl, replyAt: Date.now() })
 }
 
 export function subscribeOrgPendingHourLogs(orgId: string, onChange: (logs: HourLog[]) => void): () => void {
@@ -72,16 +162,6 @@ export function subscribeOrgPendingHourLogs(orgId: string, onChange: (logs: Hour
   })
 }
 
-// Approves an hour log and applies everything that follows from it (the
-// member's points and streak, their pet's hours, goal progress, the roster
-// total) as ONE Firestore transaction: either all of it happens or none of
-// it does, so a failure can never leave a half-approved log. Reads and the
-// pure decision (planApproval) come first; nothing is written if the
-// decision is a refusal (e.g. the volunteer never joined the organization).
-//
-// `hours`, `date` and `petId` are what the officer reviewed on screen. If the
-// stored log no longer matches (the member edited it meanwhile), the approval
-// is refused so the officer never signs off on numbers they didn't see.
 export async function approveHourLog(params: {
   logId: string
   orgId: string
@@ -92,18 +172,12 @@ export async function approveHourLog(params: {
   reviewerUid: string
   signatureDataUrl: string
 }): Promise<void> {
-  // The signature is saved on the hour log itself as a PNG data URL, since
-  // there's no Cloud Storage bucket. A 400x150 hand signature is a few KB;
-  // this cap only guards Firestore's 1 MiB document limit. Checked up front
-  // so nothing is written for an oversized signature.
   if (params.signatureDataUrl.length > MAX_SIGNATURE_DATA_URL_LENGTH) {
     throw new ApprovalError('That signature is too large. Clear it and sign again with a simpler stroke.')
   }
 
   const petId = getPetSpecies(params.petId).id
 
-  // A transaction can only read documents by path, not run queries, so the
-  // member's candidate goals are found first and then re-read inside it.
   const goalCandidates = await getActiveGoalsForMember(params.memberUid, params.orgId)
 
   await runTransaction(db, async (tx) => {
@@ -113,7 +187,6 @@ export async function approveHourLog(params: {
     const petRef = doc(db, 'users', params.memberUid, 'pets', petId)
     const goalRefs = goalCandidates.map((goal) => doc(db, 'users', params.memberUid, 'goals', goal.goalId))
 
-    // All reads before any write.
     const [logSnap, membershipSnap, userSnap, petSnap] = await Promise.all([
       tx.get(logRef),
       tx.get(membershipRef),
@@ -147,7 +220,6 @@ export async function approveHourLog(params: {
       now,
     })
 
-    // All writes, applied together when the transaction commits.
     tx.update(logRef, {
       status: 'approved',
       reviewedAt: now,
@@ -155,17 +227,7 @@ export async function approveHourLog(params: {
       signatureURL: params.signatureDataUrl,
       pointsAwarded: plan.pointsAwarded,
     })
-    tx.update(membershipRef, { totalHoursApprovedForOrg: increment(params.hours) })
-    tx.set(petRef, plan.pet, { merge: true })
-    for (const result of plan.goals) {
-      tx.update(doc(db, 'users', params.memberUid, 'goals', result.goalId), {
-        progressHours: result.progressHours,
-        status: result.status,
-        bonusPointsAwarded: result.bonusPointsAwarded,
-        bonusAmount: result.bonusAmount,
-      })
-    }
-    tx.update(userRef, plan.member)
+    applyApprovalPlan(tx, params, plan)
   })
 }
 
