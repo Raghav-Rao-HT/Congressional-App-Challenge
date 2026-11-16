@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react'
 import { Badge, type BadgeTone } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { ActionCard } from '../../components/ui/ActionCard'
+import { JoinWithCodeCard } from '../../components/org/JoinWithCodeCard'
 import { Card } from '../../components/ui/Card'
 import { EmptyState, Page, PageHeader, Section } from '../../components/ui/Page'
 import { StatTile } from '../../components/ui/StatTile'
@@ -32,7 +33,7 @@ const applicationTone: Record<OrgMemberStatus, BadgeTone> = {
 export function MemberDashboardPage() {
   const { profile } = useAuth()
   const [orgs, setOrgs] = useState<Organization[]>([])
-  const { applications, applyingTo, apply: handleApply } = useOrgApplications()
+  const { applications, applyingTo, apply: handleApply, markApproved } = useOrgApplications()
 
   useEffect(() => subscribeApprovedOrganizations(setOrgs), [])
 
@@ -79,6 +80,9 @@ export function MemberDashboardPage() {
       </Section>
 
       <Section title="Organizations">
+        <div className="mb-4">
+          <JoinWithCodeCard onJoined={markApproved} />
+        </div>
         {orgs.length === 0 ? (
           <EmptyState
             icon={Building2}

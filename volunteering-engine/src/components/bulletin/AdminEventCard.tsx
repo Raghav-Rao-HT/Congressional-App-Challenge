@@ -82,7 +82,7 @@ export function AdminEventCard({
               </Button>
               <Button variant="danger" size="sm" onClick={onConfirm} loading={busy}>
                 <Trash2 className="size-4" aria-hidden />
-                {busy ? 'Deleting…' : 'Delete event'}
+                {busy ? 'Deleting...' : 'Delete event'}
               </Button>
             </div>
           </div>

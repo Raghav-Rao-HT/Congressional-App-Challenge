@@ -1,4 +1,4 @@
-import { Building2, CalendarPlus, ClipboardCheck, Users } from 'lucide-react'
+import { Award, Building2, CalendarPlus, ClipboardCheck, Users } from 'lucide-react'
 import { Badge, type BadgeTone } from '../../components/ui/Badge'
 import { ButtonLink } from '../../components/ui/Button'
 import { ActionCard } from '../../components/ui/ActionCard'
@@ -41,7 +41,7 @@ export function OrgDashboardPage() {
         <EmptyState
           icon={Building2}
           title="Register your organization"
-          description="Tell us about your organization. Once an admin approves it, you can sign off volunteer hours and post opportunities."
+          description="Tell us about your organization. Once an admin approves it you can sign off hours and post opportunities."
           action={<ButtonLink to="/org/onboarding">Register organization</ButtonLink>}
         />
       </Page>
@@ -61,7 +61,7 @@ export function OrgDashboardPage() {
       />
 
       {org.status === 'approved' && (
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <ActionCard to="/bulletin/new?for=members" icon={CalendarPlus} title="Post an opportunity">
             Share an event with your members, or with everyone.
           </ActionCard>
@@ -70,6 +70,9 @@ export function OrgDashboardPage() {
           </ActionCard>
           <ActionCard to="/org/approvals" icon={ClipboardCheck} title="Hour approvals">
             Sign off on volunteer hours.
+          </ActionCard>
+          <ActionCard to="/org/award" icon={Award} title="Award hours">
+            Credit a volunteer directly, no request needed.
           </ActionCard>
         </div>
       )}

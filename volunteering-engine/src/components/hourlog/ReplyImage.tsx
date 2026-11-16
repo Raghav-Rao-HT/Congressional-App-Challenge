@@ -23,7 +23,7 @@ export function ReplyImage({ log }: { log: HourLog }) {
       setError(
         (err as { code?: string }).code === 'permission-denied'
           ? 'Firestore refused this. The latest security rules must be deployed.'
-          : 'Could not send the image. Try again.',
+          : "Couldn't send the image.",
       )
     } finally {
       setSending(false)

@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Trophy,
   UserCog,
+  Users,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -16,6 +17,7 @@ import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthProvider'
 import { Badge } from '../ui/Badge'
+import { Switch } from '../ui/Switch'
 import { cn } from '../../lib/cn'
 import { auth } from '../../lib/firebase'
 import { homePathFor } from '../../lib/roles'
@@ -41,8 +43,10 @@ function linkClasses({ isActive }: { isActive: boolean }) {
   )
 }
 
+const compactLinkClasses = (state: { isActive: boolean }) => cn(linkClasses(state), 'px-2.5')
+
 export function NavBar() {
-  const { profile, isSiteOwner } = useAuth()
+  const { profile, isSiteOwner, canSwitchView, adminView, setAdminView } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -50,6 +54,14 @@ export function NavBar() {
     setMenuOpen(false)
     await signOut(auth)
     navigate('/login')
+  }
+
+  const compact = profile?.accountType === 'admin'
+
+  function switchView(next: boolean) {
+    setMenuOpen(false)
+    setAdminView(next)
+    navigate(homePathFor(next ? 'admin' : (profile?.roleBeforeAdmin ?? 'member')))
   }
 
   const items: NavItem[] = profile
@@ -62,6 +74,7 @@ export function NavBar() {
           ? [
               { to: '/admin/orgs', label: 'Organizations', icon: ShieldCheck },
               { to: '/admin/events', label: 'Events', icon: CalendarDays },
+              { to: '/admin/users', label: 'Users', icon: Users },
               ...(isSiteOwner ? [{ to: '/owner/accounts', label: 'Accounts', icon: UserCog }] : []),
             ]
           : []),
@@ -84,19 +97,20 @@ export function NavBar() {
           <>
             <nav aria-label="Main" className="ml-4 hidden items-center gap-1 xl:flex">
               {items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.end} className={linkClasses}>
-                  <item.icon className="size-4" aria-hidden />
+                <NavLink key={item.to} to={item.to} end={item.end} className={compact ? compactLinkClasses : linkClasses}>
+                  {!compact && <item.icon className="size-4" aria-hidden />}
                   {item.label}
                 </NavLink>
               ))}
             </nav>
 
             <div className="ml-auto flex items-center gap-2">
+              {canSwitchView && <Switch checked={adminView} onChange={switchView} label="Admin view" className="hidden sm:flex" />}
               <span
                 title={profile.displayName}
                 className={cn(
                   'hidden items-center gap-2 rounded-full bg-surface-2 py-1 pl-1 text-sm font-medium text-fg sm:flex',
-                  profile.accountType === 'admin' ? 'pr-1 2xl:pr-3' : 'pr-3',
+                  compact ? 'pr-1' : 'pr-3',
                 )}
               >
                 <span
@@ -105,16 +119,18 @@ export function NavBar() {
                 >
                   {profile.displayName.trim().charAt(0).toUpperCase() || '?'}
                 </span>
-                <span className={cn('max-w-32 truncate', profile.accountType === 'admin' && 'hidden 2xl:inline')}>{profile.displayName}</span>
+                <span className={cn('max-w-32 truncate', compact && 'hidden')}>{profile.displayName}</span>
                 {profile.isTestAccount && <Badge tone="warn">Test</Badge>}
               </span>
               <button
                 type="button"
                 onClick={handleLogout}
+                aria-label="Log out"
+                title="Log out"
                 className="hidden items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium text-muted transition hover:bg-surface-2 hover:text-fg xl:flex"
               >
                 <LogOut className="size-4" aria-hidden />
-                Log out
+                {!compact && 'Log out'}
               </button>
               <button
                 type="button"
@@ -134,6 +150,7 @@ export function NavBar() {
         <nav aria-label="Mobile" className="border-t border-line bg-surface px-4 py-3 xl:hidden">
           <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted">{profile.displayName}</p>
           <div className="flex flex-col gap-1">
+            {canSwitchView && <Switch checked={adminView} onChange={switchView} label="Admin view" className="sm:hidden" />}
             {items.map((item) => (
               <NavLink
                 key={item.to}

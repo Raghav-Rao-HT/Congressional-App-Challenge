@@ -1,6 +1,7 @@
-import { collection, deleteField, doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, deleteField, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import type { AccountType, UserProfile } from '../../types/models'
+import { createContactAndFriendCode } from './contacts'
+import type { AccountType, AgeBand, UserProfile } from '../../types/models'
 
 export async function createUserProfile(params: {
   uid: string
@@ -8,17 +9,20 @@ export async function createUserProfile(params: {
   displayName: string
   homeState: string
   accountType: AccountType
+  ageBand: AgeBand
   nonprofitType?: string
   irsClassification?: string
 }): Promise<void> {
   const ref = doc(db, 'users', params.uid)
   const now = Date.now()
-  await setDoc(ref, {
+  // The email is NOT stored on the profile (every signed-in user can read profiles). It goes to the
+  // owner/admin-only contact document, in the same atomic batch as the profile and the friend code.
+  const profile = {
     uid: params.uid,
-    email: params.email,
     displayName: params.displayName,
     homeState: params.homeState,
     accountType: params.accountType,
+    ageBand: params.ageBand,
     nonprofitType: params.nonprofitType ?? null,
     irsClassification: params.irsClassification ?? null,
     orgId: null,
@@ -29,7 +33,12 @@ export async function createUserProfile(params: {
     lastServiceDate: null,
     createdAt: now,
     lastActiveAt: now,
-  } satisfies UserProfile)
+  } satisfies UserProfile
+
+  await createContactAndFriendCode(
+    { uid: params.uid, email: params.email, displayName: params.displayName },
+    (batch) => batch.set(ref, profile),
+  )
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {

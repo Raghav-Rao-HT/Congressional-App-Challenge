@@ -15,6 +15,7 @@ import { ApprovalError, planApproval, type ApprovalPlan } from '../approval'
 import { db } from '../firebase'
 import { getPetSpecies } from '../petVisuals'
 import { getActiveGoalsForMember } from './goals'
+import { getPetToGrow } from './pets'
 import type { Goal, HourLog, OrgMember, Pet, UserProfile } from '../../types/models'
 
 const MAX_SIGNATURE_DATA_URL_LENGTH = 300_000
@@ -64,16 +65,20 @@ function applyApprovalPlan(
   tx.update(doc(db, 'organizations', params.orgId, 'members', params.memberUid), {
     totalHoursApprovedForOrg: increment(params.hours),
   })
-  tx.set(doc(db, 'users', params.memberUid, 'pets', plan.pet.species), plan.pet, { merge: true })
+  applyMemberGrowth(tx, params.memberUid, plan)
+}
+
+function applyMemberGrowth(tx: Transaction, memberUid: string, plan: ApprovalPlan) {
+  tx.set(doc(db, 'users', memberUid, 'pets', plan.pet.species), plan.pet, { merge: true })
   for (const result of plan.goals) {
-    tx.update(doc(db, 'users', params.memberUid, 'goals', result.goalId), {
+    tx.update(doc(db, 'users', memberUid, 'goals', result.goalId), {
       progressHours: result.progressHours,
       status: result.status,
       bonusPointsAwarded: result.bonusPointsAwarded,
       bonusAmount: result.bonusAmount,
     })
   }
-  tx.update(doc(db, 'users', params.memberUid), plan.member)
+  tx.update(doc(db, 'users', memberUid), plan.member)
 }
 
 export async function submitAutoApprovedHourLog(params: SubmitHourLogParams): Promise<void> {
@@ -115,6 +120,95 @@ export async function submitAutoApprovedHourLog(params: SubmitHourLogParams): Pr
       autoApproved: true,
     } satisfies HourLog)
     applyApprovalPlan(tx, params, plan)
+  })
+}
+
+interface AwardHoursParams {
+  orgId: string
+  officerUid: string
+  memberUid: string
+  memberName: string
+  date: string
+  hours: number
+  description: string
+}
+
+export async function awardHours(params: AwardHoursParams): Promise<void> {
+  if (params.memberUid === params.officerUid) {
+    throw new ApprovalError("You can't award hours to yourself.")
+  }
+
+  const logRef = doc(collection(db, 'hourLogs'))
+  const petId = await getPetToGrow(params.memberUid)
+  const goalCandidates = await getActiveGoalsForMember(params.memberUid, params.orgId)
+
+  await runTransaction(db, async (tx) => {
+    const membershipRef = doc(db, 'organizations', params.orgId, 'members', params.memberUid)
+    const userRef = doc(db, 'users', params.memberUid)
+    const petRef = doc(db, 'users', params.memberUid, 'pets', petId)
+
+    const [membershipSnap, userSnap, petSnap] = await Promise.all([tx.get(membershipRef), tx.get(userRef), tx.get(petRef)])
+    const goalSnaps = await Promise.all(
+      goalCandidates.map((goal) => tx.get(doc(db, 'users', params.memberUid, 'goals', goal.goalId))),
+    )
+
+    const membership = membershipSnap.exists() ? (membershipSnap.data() as OrgMember) : null
+    if (membership?.roleInOrg === 'officer') {
+      throw new ApprovalError('That person is an officer of your organization. Hours can only be awarded to volunteers.')
+    }
+
+    const now = Date.now()
+    const plan = planApproval({
+      hours: params.hours,
+      date: params.date,
+      petId,
+      orgId: params.orgId,
+      logStatus: 'pending',
+      membershipStatus: 'approved',
+      member: userSnap.exists() ? (userSnap.data() as UserProfile) : null,
+      pet: petSnap.exists() ? (petSnap.data() as Pet) : null,
+      goals: goalSnaps.filter((snap) => snap.exists()).map((snap) => snap.data() as Goal),
+      now,
+    })
+
+    if (membership?.status === 'approved') {
+      tx.update(membershipRef, { totalHoursApprovedForOrg: increment(params.hours) })
+    } else if (membership) {
+      tx.update(membershipRef, {
+        status: 'approved',
+        approvedAt: now,
+        approvedByUid: params.officerUid,
+        totalHoursApprovedForOrg: increment(params.hours),
+      })
+    } else {
+      tx.set(membershipRef, {
+        uid: params.memberUid,
+        displayName: params.memberName,
+        status: 'approved',
+        roleInOrg: 'member',
+        appliedAt: now,
+        approvedAt: now,
+        approvedByUid: params.officerUid,
+        totalHoursApprovedForOrg: params.hours,
+      } satisfies OrgMember)
+    }
+
+    tx.set(logRef, {
+      ...newHourLog(logRef.id, {
+        memberUid: params.memberUid,
+        orgId: params.orgId,
+        petId,
+        date: params.date,
+        hours: params.hours,
+        description: params.description,
+      }),
+      status: 'approved',
+      reviewedAt: now,
+      reviewedByUid: params.officerUid,
+      pointsAwarded: plan.pointsAwarded,
+      awardedByOrg: true,
+    } satisfies HourLog)
+    applyMemberGrowth(tx, params.memberUid, plan)
   })
 }
 

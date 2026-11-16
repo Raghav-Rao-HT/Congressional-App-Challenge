@@ -38,20 +38,20 @@ export function useIslandState() {
 
   const movePet = useCallback(
     (species: string, point: Point) => {
-      if (uid) save(savePetPosition(uid, species, point), 'Could not save that spot. Try again.')
+      if (uid) save(savePetPosition(uid, species, point), "Couldn't save that spot.")
     },
     [uid, save],
   )
 
   const setLook = useCallback(
     (species: string, look: PetLook) => {
-      if (uid) save(savePetLook(uid, species, look), 'Could not save your changes. Try again.')
+      if (uid) save(savePetLook(uid, species, look), "Couldn't save your changes.")
     },
     [uid, save],
   )
 
   const resetPositions = useCallback(() => {
-    if (uid) save(clearPetPositions(uid), 'Could not reset the layout. Try again.')
+    if (uid) save(clearPetPositions(uid), "Couldn't reset the layout.")
   }, [uid, save])
 
   return { positions, looks, error, movePet, setLook, resetPositions }

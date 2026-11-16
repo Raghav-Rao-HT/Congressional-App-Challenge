@@ -29,7 +29,7 @@ export function ManageRsvps({ postId }: { postId: string }) {
       await decideRsvp({ postId, rsvpUid, status })
     } catch (err) {
       console.error(err)
-      setError('Could not save that decision. Try again.')
+      setError("Couldn't save that decision.")
     } finally {
       setBusyUid(null)
     }

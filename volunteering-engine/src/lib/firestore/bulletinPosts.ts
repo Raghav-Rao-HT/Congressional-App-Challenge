@@ -11,6 +11,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import { startOfTodayMillis } from '../eventDates'
 import type { BulletinAudience, BulletinPost } from '../../types/models'
 
 export async function createBulletinPost(params: {
@@ -58,6 +59,7 @@ export function subscribeBulletinPosts(
     bySource.forEach((posts) => posts.forEach((post) => merged.set(post.postId, post)))
     onChange(
       [...merged.values()]
+        .filter((post) => post.endAt >= startOfTodayMillis())
         .filter((post) => !filterState || post.location.state === filterState)
         .sort((a, b) => a.startAt - b.startAt),
     )

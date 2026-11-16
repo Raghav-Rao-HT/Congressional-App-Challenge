@@ -1,0 +1,29 @@
+# Root-level guard: this repo is PUBLIC. Keep local archives, recordings and secrets out of it.
+
+# macOS
+.DS_Store
+
+# Large local archives / recordings (these held copies of .env.local)
+*.zip
+*.mov
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+!.env.local.example
+*.local
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+*.pem
+*.p12
+
+# Local tooling state
+.claude/settings.local.json
+
+# Firebase / emulator output
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+storage-debug.log

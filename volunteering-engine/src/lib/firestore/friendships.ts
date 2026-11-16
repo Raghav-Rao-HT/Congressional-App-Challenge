@@ -1,19 +1,7 @@
-import {
-  collection,
-  doc,
-  endAt,
-  getDocs,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  setDoc,
-  startAt,
-  updateDoc,
-  where,
-} from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore'
+import { normalizeCode } from '../codes'
 import { db } from '../firebase'
-import type { Friendship } from '../../types/models'
+import type { FriendCodeEntry, Friendship } from '../../types/models'
 
 function friendshipDocId(uidA: string, uidB: string): string {
   return [uidA, uidB].sort().join('_')
@@ -54,18 +42,15 @@ export async function respondToFriendRequest(params: {
   })
 }
 
-export async function searchMembersByName(
-  prefix: string,
-): Promise<{ uid: string; displayName: string }[]> {
-  if (!prefix.trim()) return []
-  const q = query(
-    collection(db, 'users'),
-    where('accountType', '==', 'member'),
-    orderBy('displayName'),
-    startAt(prefix),
-    endAt(prefix + ''),
-    limit(10),
-  )
-  const snapshot = await getDocs(q)
-  return snapshot.docs.map((d) => ({ uid: d.id, displayName: d.data().displayName as string }))
+/**
+ * Find someone by the friend code they gave you. There is deliberately no way to search by name or to list
+ * users: a stranger can only reach a student who chose to hand them a code.
+ */
+export async function lookupFriendCode(input: string): Promise<{ uid: string; displayName: string } | null> {
+  const code = normalizeCode(input)
+  if (!code) return null
+  const snapshot = await getDoc(doc(db, 'friendCodes', code))
+  if (!snapshot.exists()) return null
+  const entry = snapshot.data() as FriendCodeEntry
+  return { uid: entry.uid, displayName: entry.displayName }
 }

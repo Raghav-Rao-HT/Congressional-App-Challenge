@@ -9,6 +9,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import type { Organization, OrgAddress, OrgLocation, OrgMember, OrgStatus } from '../../types/models'
@@ -26,6 +27,7 @@ export async function createOrganization(params: {
   causeArea: string
   nonprofitType: string | null
   irsClassification: string | null
+  ein: string
   autoApprove?: boolean
 }): Promise<string> {
   const orgRef = doc(collection(db, 'organizations'))
@@ -43,6 +45,7 @@ export async function createOrganization(params: {
     causeArea: params.causeArea,
     nonprofitType: params.nonprofitType,
     irsClassification: params.irsClassification,
+    ein: params.ein,
     status: params.autoApprove ? 'approved' : 'pending',
     submittedByUid: params.submittedByUid,
     createdAt: now,
@@ -162,19 +165,46 @@ export function subscribeOrganization(
   })
 }
 
+/**
+ * Approve an organization. firestore.rules refuse `status: 'approved'` unless the same write carries
+ * an admin's IRS verification stamp (well-formed EIN, who, when, and what was checked), so an org can
+ * never be approved without a recorded 501(c)(3) check. Both writes commit together or not at all.
+ */
 export async function approveOrganization(params: {
   orgId: string
   submittedByUid: string
   adminUid: string
+  ein: string
+  verificationSource: string
 }): Promise<void> {
-  await updateDoc(doc(db, 'organizations', params.orgId), {
+  const now = Date.now()
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'organizations', params.orgId), {
     status: 'approved',
-    reviewedAt: Date.now(),
+    reviewedAt: now,
     reviewedByAdminUid: params.adminUid,
     rejectionReason: null,
+    ein: params.ein,
+    irsVerifiedAt: now,
+    irsVerifiedByUid: params.adminUid,
+    irsVerifiedSource: params.verificationSource,
   })
-  await updateDoc(doc(db, 'users', params.submittedByUid), {
-    orgId: params.orgId,
+  batch.update(doc(db, 'users', params.submittedByUid), { orgId: params.orgId })
+  await batch.commit()
+}
+
+/** Record an IRS check for an organization that was approved before verification existed. */
+export async function verifyApprovedOrganization(params: {
+  orgId: string
+  adminUid: string
+  ein: string
+  verificationSource: string
+}): Promise<void> {
+  await updateDoc(doc(db, 'organizations', params.orgId), {
+    ein: params.ein,
+    irsVerifiedAt: Date.now(),
+    irsVerifiedByUid: params.adminUid,
+    irsVerifiedSource: params.verificationSource,
   })
 }
 

@@ -1,7 +1,15 @@
 rules_version = '2';
 
+// VetWork Firestore rules.
+//
+// There is no server code: these rules are the ONLY enforcement layer. The browser can be
+// driven by anyone with the public Firebase config, so nothing here may rely on the UI.
+// Every rule below is covered by an attack or happy-path test in rules-tests/firestore.rules.test.ts.
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- generic helpers
 
     function isSignedIn() {
       return request.auth != null;
@@ -10,6 +18,55 @@ service cloud.firestore {
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
+
+    function strRange(v, min, max) {
+      return v is string && v.size() >= min && v.size() <= max;
+    }
+
+    function strMax(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    function strOrNull(v, max) {
+      return v == null || strMax(v, max);
+    }
+
+    function numRange(v, min, max) {
+      return v is number && v >= min && v <= max;
+    }
+
+    function isoDate(v) {
+      return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    // Friend / join codes: 8 chars from a 32-symbol alphabet with no look-alikes (keep in sync with
+    // src/lib/codes.ts and scripts/_codes.mjs; rules-tests/codes.test.ts enforces it).
+    function isCode(v) {
+      return v is string && v.matches('^[A-HJ-NP-Z2-9]{8}$');
+    }
+
+    // Images are stored inline as data URLs. Pin the scheme and cap the size so a modified client
+    // cannot store an external URL (tracking pixel) or a huge blob in a document.
+    function jpegDataUrl(v, max) {
+      return v is string && v.size() <= max && v.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$');
+    }
+
+    function pngDataUrl(v, max) {
+      return v is string && v.size() <= max && v.matches('^data:image/png;base64,[A-Za-z0-9+/=]+$');
+    }
+
+    // Email verification is enforced only when this returns true. Flip it AFTER the verify-email
+    // screen has shipped in the client and every real/test account has a verified address,
+    // otherwise unverified users are locked out of every create. See SECURITY.md.
+    function enforceEmailVerification() {
+      return false;
+    }
+
+    function verifiedEmail() {
+      return !enforceEmailVerification() || request.auth.token.email_verified == true;
+    }
+
+    // ---------------------------------------------------------------- roles
 
     function isSiteOwner() {
       return isSignedIn() && request.auth.uid == 'HAwkbqkr4rYerePOfWxdQZn7tUG3';
@@ -29,11 +86,28 @@ service cloud.firestore {
       return isSignedIn() && (request.auth.token.admin == true || isSiteOwner() || hasAdminRole());
     }
 
-    function isApprovedOfficer(orgId) {
+    function isOrgApproved(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)).data.status == 'approved';
+    }
+
+    function isOrgCreator(orgId) {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/organizations/$(orgId)).data.submittedByUid == request.auth.uid;
+    }
+
+    // The caller has an approved officer membership record. Says nothing about the ORG's status.
+    function officerRecord(orgId) {
       let memberPath = /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
-      return isSignedIn() && exists(memberPath) &&
+      return isSignedIn() && orgId is string && exists(memberPath) &&
         get(memberPath).data.status == 'approved' &&
         get(memberPath).data.roleInOrg == 'officer';
+    }
+
+    // Officer of an org the admins have approved. Every officer power requires this, so an
+    // org that is still pending (or was rejected / suspended) cannot approve hours, post events
+    // or admit members.
+    function isApprovedOfficer(orgId) {
+      return officerRecord(orgId) && isOrgApproved(orgId);
     }
 
     function isApprovedMember(orgId) {
@@ -42,28 +116,97 @@ service cloud.firestore {
         get(memberPath).data.status == 'approved';
     }
 
-    function isOrgCreator(orgId) {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/organizations/$(orgId)).data.submittedByUid == request.auth.uid;
+    // The org the caller officiates. orgId on a profile is written by admins (when they approve
+    // an org) -- and never by the user -- so it cannot be self-assigned.
+    function myOrgId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('orgId', null);
     }
 
-    function isAnyApprovedOfficer() {
-      let myProfilePath = /databases/$(database)/documents/users/$(request.auth.uid);
-      return isSignedIn() &&
-        get(myProfilePath).data.accountType == 'organization_officer' &&
-        get(myProfilePath).data.orgId != null;
+    // Approved officer of an approved org. Used to READ game state (pets/goals) before a volunteer
+    // has been enrolled (awardHours enrolls them in the same transaction).
+    function isVerifiedOfficer() {
+      return isSignedIn() && myOrgId() is string && isApprovedOfficer(myOrgId());
+    }
+
+    // Verified officer AND the target is (or, within this commit, becomes) an approved member of
+    // that officer's own org. This is what scopes cross-user writes -- an officer of org A can no
+    // longer touch a stranger's points, pets or goals.
+    function isOfficerOfUser(targetUid) {
+      let orgId = myOrgId();
+      let target = /databases/$(database)/documents/organizations/$(orgId)/members/$(targetUid);
+      return isSignedIn() && orgId is string && isApprovedOfficer(orgId) &&
+        existsAfter(target) &&
+        getAfter(target).data.status == 'approved' &&
+        getAfter(target).data.roleInOrg == 'member';
+    }
+
+    // ---------------------------------------------------------------- users
+
+    function userCreateOk(uid, d) {
+      // NB: no `email` key. Profiles are readable by every signed-in user, so the email lives in the
+      // owner/admin-only users/{uid}/private/contact document instead.
+      return d.keys().hasOnly(['uid', 'displayName', 'homeState', 'accountType', 'ageBand', 'nonprofitType',
+          'irsClassification', 'orgId', 'totalPoints', 'totalHoursApproved', 'currentStreakWeeks',
+          'longestStreakWeeks', 'lastServiceDate', 'createdAt', 'lastActiveAt']) &&
+        d.keys().hasAll(['uid', 'displayName', 'homeState', 'accountType', 'ageBand', 'orgId',
+          'totalPoints', 'totalHoursApproved', 'currentStreakWeeks', 'longestStreakWeeks', 'lastServiceDate',
+          'createdAt', 'lastActiveAt']) &&
+        d.uid == uid &&
+        d.accountType in ['member', 'organization_officer'] &&
+        // VetWork is 13+. We keep only a coarse bracket, never a birth date.
+        d.ageBand in ['13-17', '18+'] &&
+        strRange(d.displayName, 2, 80) &&
+        strMax(d.homeState, 40) &&
+        strOrNull(d.get('nonprofitType', null), 120) &&
+        strOrNull(d.get('irsClassification', null), 120) &&
+        d.orgId == null &&
+        d.totalPoints == 0 && d.totalHoursApproved == 0 &&
+        d.currentStreakWeeks == 0 && d.longestStreakWeeks == 0 &&
+        d.lastServiceDate == null &&
+        d.createdAt is number && d.lastActiveAt is number;
+    }
+
+    // The five counters an approving officer maintains. Monotonic and bounded per write, so a
+    // single approval cannot add more than a 24h log can legitimately earn.
+    function counterUpdateOk(old, d) {
+      return numRange(d.totalPoints, old.totalPoints, old.totalPoints + 1000) &&
+        numRange(d.totalHoursApproved, old.totalHoursApproved, old.totalHoursApproved + 24) &&
+        numRange(d.currentStreakWeeks, 0, 1000) &&
+        numRange(d.longestStreakWeeks, 0, 1000) &&
+        (d.lastServiceDate == null || (isoDate(d.lastServiceDate)));
     }
 
     match /users/{uid} {
-      allow read: if isSignedIn();
-      allow create: if isOwner(uid) && request.resource.data.uid == uid &&
-        request.resource.data.accountType in ['member', 'organization_officer'] &&
-        request.resource.data.get('isTestAccount', false) == false &&
-        !('roleBeforeAdmin' in request.resource.data);
-      allow update: if (isOwner(uid) &&
-        request.resource.data.accountType == resource.data.accountType &&
-        request.resource.data.uid == resource.data.uid &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isTestAccount', 'roleBeforeAdmin'])) ||
+      // A profile (name, state, points) is visible to signed-in users who already know whose it is --
+      // friends' rankings, leaderboard rows, org rosters. Contact details are NOT on the profile.
+      allow get: if isSignedIn();
+      // Listing users is for admins, plus the bounded leaderboard query (ordered, `limit` <= 200). Nobody
+      // else can enumerate the user base: students are found only through friend codes / join codes.
+      allow list: if isAdmin() ||
+        (isSignedIn() && 'limit' in request.query && request.query.limit <= 200);
+
+      allow create: if isOwner(uid) && userCreateOk(uid, request.resource.data);
+
+      allow update: if
+        // The owner may only touch cosmetic profile fields -- never counters, role, orgId or flags.
+        (isOwner(uid) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'homeState', 'lastActiveAt']) &&
+          strRange(request.resource.data.displayName, 2, 80) &&
+          strMax(request.resource.data.homeState, 40) &&
+          request.resource.data.lastActiveAt is number) ||
+        // Test accounts adopt the org they just auto-approved.
+        (isOwner(uid) && isTestAccount() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgId']) &&
+          request.resource.data.orgId is string &&
+          get(/databases/$(database)/documents/organizations/$(request.resource.data.orgId)).data.submittedByUid == uid &&
+          get(/databases/$(database)/documents/organizations/$(request.resource.data.orgId)).data.status == 'approved') ||
+        // Demo accounts (flagged only by the site owner) self-approve their own hours, so they keep
+        // their own counters -- with the same per-write bounds an officer is held to.
+        (isOwner(uid) && isTestAccount() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['totalPoints', 'totalHoursApproved', 'currentStreakWeeks', 'longestStreakWeeks', 'lastServiceDate']) &&
+          counterUpdateOk(resource.data, request.resource.data)) ||
+        // Admins link an approved org to its submitter and moderate the leaderboard.
         (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgId', 'leaderboardHidden'])) ||
         (isSiteOwner() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isTestAccount']) &&
@@ -77,13 +220,35 @@ service cloud.firestore {
             (resource.data.accountType == 'admin' &&
               request.resource.data.accountType in ['member', 'organization_officer'] &&
               !('roleBeforeAdmin' in request.resource.data)))) ||
-        (isAnyApprovedOfficer() && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['totalPoints', 'totalHoursApproved', 'currentStreakWeeks', 'longestStreakWeeks', 'lastServiceDate']));
+        // A verified officer records approved service for a member of THEIR OWN org.
+        (isOfficerOfUser(uid) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['totalPoints', 'totalHoursApproved', 'currentStreakWeeks', 'longestStreakWeeks', 'lastServiceDate']) &&
+          counterUpdateOk(resource.data, request.resource.data));
+
       allow delete: if false;
 
-      match /pets/{orgId} {
-        allow read: if isOwner(uid) || isAnyApprovedOfficer();
-        allow write: if isAnyApprovedOfficer() || (isOwner(uid) && isTestAccount());
+      // Private contact details (email) and the user's friend code. Written once, never edited.
+      match /private/{docId} {
+        allow read: if docId == 'contact' && (isOwner(uid) || isAdmin());
+        allow create: if docId == 'contact' && isOwner(uid) &&
+          request.resource.data.keys().hasOnly(['email', 'friendCode']) &&
+          strMax(request.resource.data.email, 254) &&
+          request.resource.data.email.lower() == request.auth.token.email.lower() &&
+          isCode(request.resource.data.friendCode) &&
+          existsAfter(/databases/$(database)/documents/users/$(uid));
+        allow update, delete: if false;
+      }
+
+      match /pets/{petId} {
+        allow read: if isOwner(uid) || isVerifiedOfficer();
+        allow write: if (isOfficerOfUser(uid) || (isOwner(uid) && isTestAccount())) &&
+          request.resource.data.species == petId &&
+          strMax(request.resource.data.name, 40) &&
+          numRange(request.resource.data.xp, 0, 100000) &&
+          request.resource.data.stage in [0, 1, 2, 3] &&
+          request.resource.data.unlockedCosmetics is list &&
+          request.resource.data.unlockedCosmetics.size() <= 100;
       }
 
       match /island/{docId} {
@@ -91,83 +256,372 @@ service cloud.firestore {
       }
 
       match /goals/{goalId} {
-        allow read: if isOwner(uid) || isAnyApprovedOfficer();
-        allow create, delete: if isOwner(uid);
-        allow update: if isOwner(uid) ||
-          (isAnyApprovedOfficer() && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['progressHours', 'status', 'bonusPointsAwarded', 'bonusAmount']));
+        allow read: if isOwner(uid) || isVerifiedOfficer();
+        // A member sets their own targets, but cannot pre-fill progress or bonuses, and tiny
+        // targets (each worth a flat bonus) are not allowed.
+        allow create: if isOwner(uid) && verifiedEmail() &&
+          request.resource.data.keys().hasOnly(['goalId', 'orgId', 'targetHours', 'periodStart', 'periodEnd',
+            'progressHours', 'status', 'bonusPointsAwarded', 'bonusAmount']) &&
+          request.resource.data.goalId == goalId &&
+          numRange(request.resource.data.targetHours, 1, 1000) &&
+          strOrNull(request.resource.data.orgId, 64) &&
+          isoDate(request.resource.data.periodStart) && isoDate(request.resource.data.periodEnd) &&
+          request.resource.data.progressHours == 0 &&
+          request.resource.data.status == 'active' &&
+          request.resource.data.bonusPointsAwarded == false &&
+          request.resource.data.bonusAmount == 0;
+        allow delete: if isOwner(uid);
+        // Progress and bonuses are only ever written by the officer who approves hours.
+        allow update: if isOfficerOfUser(uid) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['progressHours', 'status', 'bonusPointsAwarded', 'bonusAmount']) &&
+          request.resource.data.status in ['active', 'completed', 'missed'] &&
+          numRange(request.resource.data.bonusAmount, 0, 1000);
       }
     }
 
+    // ---------------------------------------------------------------- organizations
+
+    function orgContactOk(d) {
+      return strRange(d.name, 1, 120) &&
+        strRange(d.contactEmail, 3, 120) && d.contactEmail.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$') &&
+        strMax(d.contactPhone, 30) &&
+        strMax(d.website, 200) && (d.website == '' || d.website.matches('^https?://[^\\s]+$')) &&
+        strMax(d.causeArea, 80) &&
+        d.address is map &&
+        strMax(d.address.get('street', ''), 160) && strMax(d.address.get('city', ''), 80) &&
+        strMax(d.address.get('state', ''), 40) && strMax(d.address.get('zip', ''), 12) &&
+        (d.get('location', null) == null || d.location is map);
+    }
+
+    function einOk(v) {
+      return v is string && v.matches('^[0-9]{2}-[0-9]{7}$');
+    }
+
+    function orgCreateOk(orgId, d) {
+      return d.keys().hasOnly(['orgId', 'name', 'legalName', 'address', 'location', 'contactEmail', 'contactPhone',
+          'website', 'causeArea', 'nonprofitType', 'irsClassification', 'ein', 'status', 'submittedByUid',
+          'createdAt', 'reviewedAt', 'reviewedByAdminUid', 'rejectionReason', 'memberCount']) &&
+        d.keys().hasAll(['orgId', 'name', 'legalName', 'address', 'contactEmail', 'contactPhone', 'website',
+          'causeArea', 'status', 'submittedByUid', 'createdAt', 'memberCount']) &&
+        d.orgId == orgId &&
+        d.submittedByUid == request.auth.uid &&
+        strMax(d.legalName, 160) &&
+        strOrNull(d.get('nonprofitType', null), 120) &&
+        strOrNull(d.get('irsClassification', null), 120) &&
+        d.createdAt is number && d.memberCount == 1 &&
+        d.get('reviewedByAdminUid', null) == null &&
+        d.get('rejectionReason', null) == null &&
+        !('irsVerifiedAt' in d) && !('irsVerifiedByUid' in d) &&
+        orgContactOk(d);
+    }
+
+    // Admin-only verification stamp. An org can only become `approved` once an admin has recorded
+    // a successful IRS (501(c)(3)) check against a well-formed EIN.
+    function irsStampOk(d) {
+      return d.get('irsVerifiedAt', null) is number &&
+        d.get('irsVerifiedByUid', null) == request.auth.uid &&
+        strMax(d.get('irsVerifiedSource', ''), 300) &&
+        einOk(d.get('ein', null));
+    }
+
+    function orgAdminUpdateOk(d, old) {
+      return d.submittedByUid == old.submittedByUid &&
+        d.orgId == old.orgId &&
+        d.createdAt == old.createdAt &&
+        (d.status != 'approved' || old.status == 'approved' || irsStampOk(d)) &&
+        (d.get('irsVerifiedAt', null) == null || irsStampOk(d));
+    }
+
     match /organizations/{orgId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() &&
-        request.resource.data.submittedByUid == request.auth.uid &&
-        (request.resource.data.status == 'pending' ||
+      // Pending / rejected orgs (address, phone, email) are visible only to their submitter,
+      // their officers and admins. Everyone signed in can list the approved ones.
+      allow read: if isSignedIn() &&
+        (resource.data.status == 'approved' ||
+          resource.data.submittedByUid == request.auth.uid ||
+          isAdmin() ||
+          officerRecord(orgId));
+
+      allow create: if isSignedIn() && verifiedEmail() &&
+        orgCreateOk(orgId, request.resource.data) &&
+        ((request.resource.data.status == 'pending' &&
+            request.resource.data.get('ein', null) != null && einOk(request.resource.data.ein)) ||
           (request.resource.data.status == 'approved' && isTestAccount()));
-      allow update: if isAdmin() ||
-        (isApprovedOfficer(orgId) && request.resource.data.status == resource.data.status);
+
+      allow update: if
+        (isAdmin() && orgAdminUpdateOk(request.resource.data, resource.data)) ||
+        // Officers of an approved org may edit contact details only -- never status, ownership,
+        // EIN or the verification stamp.
+        (isApprovedOfficer(orgId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'contactEmail', 'contactPhone', 'website', 'causeArea', 'address', 'location']) &&
+          orgContactOk(request.resource.data));
+
       allow delete: if false;
 
+      function memberShapeOk(memberUid, d) {
+        return d.keys().hasOnly(['uid', 'displayName', 'status', 'roleInOrg', 'appliedAt', 'approvedAt',
+            'approvedByUid', 'totalHoursApprovedForOrg', 'joinCode']) &&
+          d.keys().hasAll(['uid', 'displayName', 'status', 'roleInOrg', 'appliedAt', 'totalHoursApprovedForOrg']) &&
+          d.uid == memberUid &&
+          strRange(d.displayName, 1, 80) &&
+          d.appliedAt is number;
+      }
+
+      // The record presents a LIVE join code that belongs to THIS (approved) org, and names the officer who
+      // issued it as the approver. The trust is in whoever handed the code out.
+      function joinCodeAdmits(orgId, d) {
+        let code = d.get('joinCode', '');
+        return isCode(code) &&
+          get(/databases/$(database)/documents/joinCodes/$(code)).data.orgId == orgId &&
+          get(/databases/$(database)/documents/joinCodes/$(code)).data.active == true &&
+          d.approvedByUid == get(/databases/$(database)/documents/joinCodes/$(code)).data.createdByUid &&
+          isOrgApproved(orgId);
+      }
+
       match /members/{memberUid} {
-        allow read: if isSignedIn();
-        allow create: if isOwner(memberUid) && (
-          (request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member') ||
-          (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'officer' && isOrgCreator(orgId)) ||
-          (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'member' && isTestAccount())
-        );
-        allow update: if isApprovedOfficer(orgId) ||
-          (isOwner(memberUid) && request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member') ||
+        allow read: if isSignedIn() && (isOwner(memberUid) || officerRecord(orgId) || isAdmin());
+
+        allow create: if verifiedEmail() &&
+          ((isOwner(memberUid) && memberShapeOk(memberUid, request.resource.data) &&
+            request.resource.data.totalHoursApprovedForOrg == 0 &&
+            ((request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member') ||
+              (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'officer' && isOrgCreator(orgId)) ||
+              (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'member' && isTestAccount()) ||
+              (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'member' &&
+                joinCodeAdmits(orgId, request.resource.data)))) ||
+          (isApprovedOfficer(orgId) &&
+            memberUid != request.auth.uid &&
+            memberShapeOk(memberUid, request.resource.data) &&
+            request.resource.data.status == 'approved' &&
+            request.resource.data.roleInOrg == 'member' &&
+            numRange(request.resource.data.totalHoursApprovedForOrg, 0, 24) &&
+            exists(/databases/$(database)/documents/users/$(memberUid))));
+
+        allow update: if
+          // An officer admits / rejects members and credits hours -- but cannot promote anyone,
+          // cannot edit their own record, and cannot add more than one log's worth of hours.
+          (isApprovedOfficer(orgId) &&
+            memberUid != request.auth.uid &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'approvedAt', 'approvedByUid', 'totalHoursApprovedForOrg']) &&
+            request.resource.data.status in ['approved', 'rejected', 'removed'] &&
+            numRange(request.resource.data.totalHoursApprovedForOrg - resource.data.totalHoursApprovedForOrg, 0, 24)) ||
+          // A volunteer re-applying (the client rewrites the whole record, hence the shape check).
+          (isOwner(memberUid) && memberShapeOk(memberUid, request.resource.data) &&
+            request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member' &&
+            resource.data.roleInOrg == 'member' &&
+            request.resource.data.totalHoursApprovedForOrg in [0, resource.data.totalHoursApprovedForOrg]) ||
+          (isOwner(memberUid) && memberShapeOk(memberUid, request.resource.data) &&
+            resource.data.status == 'applied' && resource.data.roleInOrg == 'member' &&
+            request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'member' &&
+            joinCodeAdmits(orgId, request.resource.data) &&
+            request.resource.data.totalHoursApprovedForOrg in [0, resource.data.totalHoursApprovedForOrg]) ||
           (isOwner(memberUid) && isTestAccount() && resource.data.roleInOrg == 'member' &&
-            request.resource.data.roleInOrg == 'member' && request.resource.data.status == 'approved');
+            request.resource.data.roleInOrg == 'member' && request.resource.data.status == 'approved' &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'appliedAt', 'approvedAt', 'approvedByUid', 'totalHoursApprovedForOrg']) &&
+            (request.resource.data.totalHoursApprovedForOrg == 0 ||
+              numRange(request.resource.data.totalHoursApprovedForOrg - resource.data.totalHoursApprovedForOrg, 0, 24)));
+
         allow delete: if false;
       }
     }
 
+    // `getMyApplications` asks "which orgs have I applied to?" across all orgs. Everyone may list
+    // their OWN membership records; nobody else's.
     match /{path=**}/members/{memberUid} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    // ---------------------------------------------------------------- private contacts, friend codes, join codes
+
+    // Admin screens list every user's private contact document (email) in one query. Nobody else can.
+    // (No `docId` check here: in a collection-group query that wildcard is unbound. Only `contact` documents exist.)
+    match /{path=**}/private/{docId} {
+      allow read: if isAdmin();
+    }
+
+    // friendCodes/{code} -> { uid, displayName }. You can GET a code you were handed; nobody can LIST them, so
+    // students cannot be enumerated or searched. A code can only be claimed together with the user's own
+    // private contact document (which records it), exactly once, under the name on their profile.
+    match /friendCodes/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn() && isCode(code) &&
+        request.resource.data.keys().hasOnly(['uid', 'displayName']) &&
+        request.resource.data.uid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/private/contact).data.friendCode == code &&
+        request.resource.data.displayName ==
+          getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName;
+      allow update, delete: if false;
+    }
+
+    // joinCodes/{code} -> { orgId, createdByUid, createdAt, active }. Issued and switched off by an approved
+    // officer of an approved org; anyone signed in who HOLDS the code can read it; only that org's officers can list.
+    match /joinCodes/{code} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && isApprovedOfficer(resource.data.orgId);
+      allow create: if isCode(code) &&
+        request.resource.data.keys().hasOnly(['orgId', 'createdByUid', 'createdAt', 'active']) &&
+        isApprovedOfficer(request.resource.data.orgId) &&
+        request.resource.data.createdByUid == request.auth.uid &&
+        request.resource.data.createdAt is number &&
+        request.resource.data.active == true;
+      allow update: if isApprovedOfficer(resource.data.orgId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active']) &&
+        request.resource.data.active is bool;
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------- hour logs
+
+    function hourLogKeysOk(d) {
+      return d.keys().hasOnly(['logId', 'memberUid', 'orgId', 'petId', 'date', 'hours', 'description',
+          'attachmentURLs', 'status', 'submittedAt', 'reviewedAt', 'reviewedByUid', 'rejectionReason',
+          'signatureURL', 'pointsAwarded', 'autoApproved', 'awardedByOrg', 'replyImageURL', 'replyAt']) &&
+        d.keys().hasAll(['logId', 'memberUid', 'orgId', 'date', 'hours', 'description', 'attachmentURLs',
+          'status', 'submittedAt']);
+    }
+
+    function hourLogBodyOk(logId, d) {
+      return hourLogKeysOk(d) &&
+        d.logId == logId &&
+        strMax(d.orgId, 64) &&
+        strMax(d.get('petId', ''), 64) &&
+        isoDate(d.date) &&
+        numRange(d.hours, 0.01, 24) &&
+        strRange(d.description, 1, 500) &&
+        d.attachmentURLs is list && d.attachmentURLs.size() <= 1 &&
+        (d.attachmentURLs.size() == 0 || jpegDataUrl(d.attachmentURLs[0], 200000)) &&
+        d.submittedAt is number;
+    }
+
+    // Everything an officer writes is absent or null on a fresh member submission.
+    function pendingMemberLogOk(d) {
+      return d.status == 'pending' &&
+        d.get('reviewedAt', null) == null && d.get('reviewedByUid', null) == null &&
+        d.get('rejectionReason', null) == null && d.get('signatureURL', null) == null &&
+        d.get('pointsAwarded', null) == null && d.get('replyImageURL', null) == null &&
+        d.get('replyAt', null) == null &&
+        !('awardedByOrg' in d) && !('autoApproved' in d);
     }
 
     match /hourLogs/{logId} {
       allow read: if isOwner(resource.data.memberUid) || isApprovedOfficer(resource.data.orgId);
-      allow create: if isOwner(request.resource.data.memberUid) &&
-        isApprovedMember(request.resource.data.orgId) &&
-        (request.resource.data.status == 'pending' ||
-          (request.resource.data.status == 'approved' && isTestAccount()));
+
+      allow create: if verifiedEmail() && hourLogBodyOk(logId, request.resource.data) && (
+        // A volunteer submits a pending log to an org they belong to.
+        (isOwner(request.resource.data.memberUid) &&
+          isApprovedMember(request.resource.data.orgId) &&
+          pendingMemberLogOk(request.resource.data)) ||
+        // Test accounts may self-approve (demo data only).
+        (isOwner(request.resource.data.memberUid) &&
+          isApprovedMember(request.resource.data.orgId) &&
+          request.resource.data.status == 'approved' && isTestAccount() &&
+          request.resource.data.reviewedByUid == request.auth.uid &&
+          numRange(request.resource.data.pointsAwarded, 0, 1000)) ||
+        // An officer of an approved org awards hours directly to someone else.
+        (isApprovedOfficer(request.resource.data.orgId) &&
+          request.resource.data.status == 'approved' &&
+          request.resource.data.awardedByOrg == true &&
+          request.resource.data.reviewedByUid == request.auth.uid &&
+          request.resource.data.memberUid != request.auth.uid &&
+          numRange(request.resource.data.pointsAwarded, 0, 1000) &&
+          request.resource.data.attachmentURLs.size() == 0 &&
+          getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.orgId)/members/$(request.resource.data.memberUid)).data.status == 'approved' &&
+          getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.orgId)/members/$(request.resource.data.memberUid)).data.roleInOrg == 'member'));
+
       allow update: if
-        (isOwner(resource.data.memberUid) && resource.data.status == 'pending' && request.resource.data.status == 'pending' &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['replyImageURL', 'replyAt'])) ||
-        (isApprovedOfficer(resource.data.orgId) && resource.data.status == 'pending' && request.resource.data.status in ['approved', 'rejected']) ||
+        // Review: the officer of an approved org decides a PENDING log -- never their own, and
+        // only the review fields can change (hours, date, member, org stay exactly as submitted).
         (isApprovedOfficer(resource.data.orgId) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyImageURL', 'replyAt']));
+          resource.data.status == 'pending' &&
+          resource.data.memberUid != request.auth.uid &&
+          request.resource.data.status in ['approved', 'rejected'] &&
+          request.resource.data.reviewedByUid == request.auth.uid &&
+          request.resource.data.reviewedAt is number &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewedAt', 'reviewedByUid', 'signatureURL', 'pointsAwarded', 'rejectionReason']) &&
+          (request.resource.data.status == 'rejected'
+            ? strRange(request.resource.data.get('rejectionReason', ''), 1, 300)
+            : (pngDataUrl(request.resource.data.signatureURL, 300000) &&
+               numRange(request.resource.data.pointsAwarded, 0, 1000)))) ||
+        // Reply image: the officer can send one image back, on any status.
+        (isApprovedOfficer(resource.data.orgId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyImageURL', 'replyAt']) &&
+          jpegDataUrl(request.resource.data.replyImageURL, 200000) &&
+          request.resource.data.replyAt is number);
+
       allow delete: if isOwner(resource.data.memberUid) && resource.data.status == 'pending';
+    }
+
+    // ---------------------------------------------------------------- friendships
+
+    function friendshipOk(friendshipId, d) {
+      return d.keys().hasOnly(['participants', 'requesterUid', 'recipientUid', 'status', 'createdAt', 'respondedAt']) &&
+        d.keys().hasAll(['participants', 'requesterUid', 'recipientUid', 'status', 'createdAt']) &&
+        d.participants is list && d.participants.size() == 2 &&
+        d.requesterUid == request.auth.uid &&
+        d.recipientUid != d.requesterUid &&
+        d.participants.hasAll([d.requesterUid, d.recipientUid]) &&
+        d.participants[0] < d.participants[1] &&
+        friendshipId == d.participants[0] + '_' + d.participants[1] &&
+        d.status == 'pending' &&
+        d.get('respondedAt', null) == null &&
+        d.createdAt is number;
     }
 
     match /friendships/{friendshipId} {
       allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
-      allow create: if isSignedIn() &&
-        request.auth.uid == request.resource.data.requesterUid &&
-        request.auth.uid in request.resource.data.participants &&
-        request.resource.data.participants.size() == 2 &&
-        request.resource.data.status == 'pending';
+      allow create: if isSignedIn() && verifiedEmail() &&
+        friendshipOk(friendshipId, request.resource.data) &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.recipientUid));
       allow update: if isSignedIn() && request.auth.uid == resource.data.recipientUid &&
-        resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'declined'];
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['accepted', 'declined'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt']);
       allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------- bulletin board
+
+    function bulletinCreateOk(postId, d) {
+      return d.keys().hasOnly(['postId', 'authorUid', 'authorType', 'orgId', 'audience', 'offersServiceHours',
+          'approvedCount', 'title', 'description', 'startAt', 'endAt', 'location', 'tags', 'status', 'createdAt']) &&
+        d.postId == postId &&
+        strRange(d.title, 1, 120) &&
+        strMax(d.description, 4000) &&
+        d.tags is list && d.tags.size() <= 10 &&
+        d.location is map &&
+        d.location.keys().hasOnly(['address', 'city', 'state']) &&
+        strMax(d.location.get('address', ''), 200) && strMax(d.location.get('city', ''), 80) &&
+        strMax(d.location.get('state', ''), 40) &&
+        d.createdAt is number;
     }
 
     match /bulletinPosts/{postId} {
       allow read: if isSignedIn() &&
         (isAdmin() || resource.data.audience == 'public' || isApprovedMember(resource.data.orgId));
-      allow create: if isOwner(request.resource.data.authorUid) &&
+      allow create: if isOwner(request.resource.data.authorUid) && verifiedEmail() &&
+        bulletinCreateOk(postId, request.resource.data) &&
         request.resource.data.status == 'open' &&
         request.resource.data.offersServiceHours is bool &&
+        request.resource.data.startAt is number &&
+        request.resource.data.endAt is number &&
+        request.resource.data.endAt >= request.resource.data.startAt &&
+        request.resource.data.endAt >= request.time.toMillis() &&
         request.resource.data.approvedCount == 0 &&
-        (request.resource.data.authorType == 'member' ||
-          (request.resource.data.orgId is string && isApprovedOfficer(request.resource.data.orgId))) &&
+        // A member-authored post carries no org identity, so it cannot pose as an organization.
+        ((request.resource.data.authorType == 'member' && request.resource.data.orgId == null) ||
+          (request.resource.data.authorType == 'org' &&
+            request.resource.data.orgId is string && isApprovedOfficer(request.resource.data.orgId))) &&
         (request.resource.data.audience == 'public' ||
           (request.resource.data.audience == 'members' && request.resource.data.authorType == 'org'));
       allow update: if (isOwner(resource.data.authorUid) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount', 'status'])) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount', 'status']) &&
+        request.resource.data.approvedCount is number && request.resource.data.approvedCount >= 0 &&
+        request.resource.data.status in ['open', 'closed', 'cancelled']) ||
         (isTestAccount() && resource.data.status == 'open' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount']) &&
           request.resource.data.approvedCount == resource.data.approvedCount + 1);
@@ -180,8 +634,10 @@ service cloud.firestore {
 
         allow read: if isSignedIn() &&
           (isAdmin() || isOwner(rsvpUid) || isOwner(post().authorUid) || resource.data.status == 'approved');
-        allow create: if isOwner(rsvpUid) &&
+        allow create: if isOwner(rsvpUid) && verifiedEmail() &&
+          request.resource.data.keys().hasOnly(['uid', 'displayName', 'status', 'createdAt', 'decidedAt']) &&
           request.resource.data.uid == rsvpUid &&
+          strRange(request.resource.data.displayName, 1, 80) &&
           ((request.resource.data.status == 'pending' && request.resource.data.decidedAt == null) ||
             (request.resource.data.status == 'approved' && request.resource.data.decidedAt is int && isTestAccount())) &&
           post().status == 'open' &&

@@ -10,6 +10,19 @@ interface AuthContextValue {
   profile: UserProfile | null
   loading: boolean
   isSiteOwner: boolean
+  canSwitchView: boolean
+  adminView: boolean
+  setAdminView: (adminView: boolean) => void
+}
+
+const VIEW_KEY = 'vetwork.adminView'
+
+function readAdminView(): boolean {
+  try {
+    return localStorage.getItem(VIEW_KEY) !== 'user'
+  } catch {
+    return true
+  }
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -19,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [savedProfile, setProfile] = useState<UserProfile | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [profileChecked, setProfileChecked] = useState(false)
+  const [adminView, setAdminViewState] = useState(readAdminView)
 
   useEffect(() => {
     return onAuthStateChanged(auth, (nextUser) => {
@@ -42,10 +56,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const owner = isSiteOwner(user?.uid)
 
-  const profile = useMemo(
-    () => (user && savedProfile ? { ...savedProfile, accountType: effectiveAccountType(user.uid, savedProfile.accountType) } : null),
-    [user, savedProfile],
-  )
+  const baseType = user && savedProfile ? effectiveAccountType(user.uid, savedProfile.accountType) : null
+  const canSwitchView = baseType === 'admin'
+
+  const profile = useMemo(() => {
+    if (!savedProfile || !baseType) return null
+    const accountType = baseType === 'admin' && !adminView ? (savedProfile.roleBeforeAdmin ?? 'member') : baseType
+    return { ...savedProfile, accountType }
+  }, [savedProfile, baseType, adminView])
+
+  function setAdminView(next: boolean) {
+    setAdminViewState(next)
+    try {
+      localStorage.setItem(VIEW_KEY, next ? 'admin' : 'user')
+    } catch {
+      return
+    }
+  }
 
   useEffect(() => {
     if (!user || !owner || !savedProfile) return
@@ -58,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loading = authLoading || (user !== null && !profileChecked)
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isSiteOwner: owner }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, profile, loading, isSiteOwner: owner, canSwitchView, adminView, setAdminView }}>{children}</AuthContext.Provider>
   )
 }
 

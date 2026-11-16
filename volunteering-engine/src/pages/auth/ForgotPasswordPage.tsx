@@ -39,7 +39,7 @@ function messageFor(error: unknown): string {
     case 'auth/network-request-failed':
       return 'Could not reach the server. Check your connection and try again.'
     default:
-      return 'Could not send the email. Try again.'
+      return "Couldn't send the email."
   }
 }
 
@@ -76,7 +76,7 @@ export function ForgotPasswordPage() {
 
   if (sentTo) {
     return (
-      <AuthLayout title="Check your email" subtitle="We've sent you a way to choose a new password." footer={footer}>
+      <AuthLayout title="Check your email" subtitle="Follow the link in the email to pick a new password." footer={footer}>
         <div role="status" className="rounded-2xl border border-line bg-surface p-5">
           <span className="grid size-11 place-items-center rounded-2xl bg-info-soft text-info">
             <MailCheck className="size-5" aria-hidden />
@@ -114,7 +114,7 @@ export function ForgotPasswordPage() {
         )}
 
         <Button type="submit" size="lg" loading={isSubmitting} className="w-full">
-          {isSubmitting ? 'Sending…' : 'Send reset link'}
+          {isSubmitting ? 'Sending...' : 'Send reset link'}
         </Button>
       </form>
     </AuthLayout>

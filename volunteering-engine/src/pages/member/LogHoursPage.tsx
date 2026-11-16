@@ -15,6 +15,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useAuth } from '../../context/AuthProvider'
 import { useMyPets } from '../../hooks/useMyPets'
 import { useOrgApplications } from '../../hooks/useOrgApplications'
+import { todayISO } from '../../lib/eventDates'
 import { submitAutoApprovedHourLog, submitHourLog, subscribeMyHourLogs } from '../../lib/firestore/hourLogs'
 import { subscribeApprovedOrganizations } from '../../lib/firestore/organizations'
 import { DEFAULT_PET_ID, petStageLabel } from '../../lib/petVisuals'
@@ -23,9 +24,12 @@ import type { HourLog, Organization } from '../../types/models'
 const schema = z.object({
   orgId: z.string().min(1, 'Choose an organization'),
   petId: z.string().min(1, 'Choose a pet'),
-  date: z.string().min(1, 'Choose a date'),
-  hours: z.coerce.number().positive('Enter hours greater than 0'),
-  description: z.string().min(3, 'Briefly describe what you did'),
+  date: z
+    .string()
+    .min(1, 'Choose a date')
+    .refine((date) => date <= todayISO(), "The date can't be in the future"),
+  hours: z.coerce.number().positive('Enter hours greater than 0').max(24, 'Log at most 24 hours at a time'),
+  description: z.string().trim().min(3, 'Briefly describe what you did').max(500, 'At most 500 characters'),
 })
 
 type FormInput = z.input<typeof schema>
@@ -90,7 +94,7 @@ export function LogHoursPage() {
       setScan(null)
       setSubmitted(testAccount ? 'approved' : 'pending')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not submit this log. Try again.')
+      setError(err instanceof Error ? err.message : "Couldn't submit this log.")
     }
   }
 
@@ -159,7 +163,7 @@ export function LogHoursPage() {
                 <Select aria-invalid={!!errors.petId} {...register('petId')}>
                   {pets.map((pet) => (
                     <option key={pet.species} value={pet.species}>
-                      {pet.name} — {pet.xp}h · {petStageLabel(pet.stage)}
+                      {pet.name} ({pet.xp}h, {petStageLabel(pet.stage)})
                     </option>
                   ))}
                 </Select>
@@ -191,12 +195,12 @@ export function LogHoursPage() {
                 <CircleCheck className="size-4" aria-hidden />
                 {submitted === 'approved'
                   ? 'Submitted and approved automatically (test account).'
-                  : 'Submitted — pending organization sign-off.'}
+                  : 'Submitted. Waiting for the organization to sign off.'}
               </p>
             )}
 
             <Button type="submit" size="lg" loading={isSubmitting} className="w-full">
-              {isSubmitting ? 'Submitting…' : 'Submit hours'}
+              {isSubmitting ? 'Submitting...' : 'Submit hours'}
             </Button>
           </form>
         </Card>
@@ -221,9 +225,12 @@ export function LogHoursPage() {
                       </p>
                       <p className="truncate text-sm text-muted">{log.description}</p>
                     </div>
-                    <Badge tone={statusTone[log.status]} className="capitalize">
-                      {log.status}
-                    </Badge>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                      {log.awardedByOrg && <Badge tone="violet">Awarded</Badge>}
+                      <Badge tone={statusTone[log.status]} className="capitalize">
+                        {log.status}
+                      </Badge>
+                    </div>
                   </div>
                   {(log.attachmentURLs[0] || log.replyImageURL) && (
                     <div className="mt-3 flex flex-wrap gap-3">

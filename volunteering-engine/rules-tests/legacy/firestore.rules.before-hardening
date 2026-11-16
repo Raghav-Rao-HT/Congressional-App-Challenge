@@ -1,0 +1,228 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isSiteOwner() {
+      return isSignedIn() && request.auth.uid == 'HAwkbqkr4rYerePOfWxdQZn7tUG3';
+    }
+
+    function hasAdminRole() {
+      let profilePath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(profilePath) && get(profilePath).data.accountType == 'admin';
+    }
+
+    function isTestAccount() {
+      let profilePath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() && exists(profilePath) && get(profilePath).data.get('isTestAccount', false) == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (request.auth.token.admin == true || isSiteOwner() || hasAdminRole());
+    }
+
+    function isApprovedOfficer(orgId) {
+      let memberPath = /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
+      return isSignedIn() && exists(memberPath) &&
+        get(memberPath).data.status == 'approved' &&
+        get(memberPath).data.roleInOrg == 'officer';
+    }
+
+    function isApprovedMember(orgId) {
+      let memberPath = /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
+      return isSignedIn() && orgId is string && exists(memberPath) &&
+        get(memberPath).data.status == 'approved';
+    }
+
+    function isOrgApproved(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)).data.status == 'approved';
+    }
+
+    function isOrgCreator(orgId) {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/organizations/$(orgId)).data.submittedByUid == request.auth.uid;
+    }
+
+    function isAnyApprovedOfficer() {
+      let myProfilePath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() &&
+        get(myProfilePath).data.accountType == 'organization_officer' &&
+        get(myProfilePath).data.orgId != null;
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(uid) && request.resource.data.uid == uid &&
+        request.resource.data.accountType in ['member', 'organization_officer'] &&
+        request.resource.data.get('isTestAccount', false) == false &&
+        !('roleBeforeAdmin' in request.resource.data);
+      allow update: if (isOwner(uid) &&
+        request.resource.data.accountType == resource.data.accountType &&
+        request.resource.data.uid == resource.data.uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isTestAccount', 'roleBeforeAdmin'])) ||
+        (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgId', 'leaderboardHidden'])) ||
+        (isSiteOwner() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isTestAccount']) &&
+          request.resource.data.isTestAccount is bool &&
+          resource.data.accountType in ['member', 'organization_officer']) ||
+        (isSiteOwner() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['accountType', 'roleBeforeAdmin']) &&
+          ((resource.data.accountType in ['member', 'organization_officer'] &&
+              request.resource.data.accountType == 'admin' &&
+              request.resource.data.roleBeforeAdmin == resource.data.accountType) ||
+            (resource.data.accountType == 'admin' &&
+              request.resource.data.accountType in ['member', 'organization_officer'] &&
+              !('roleBeforeAdmin' in request.resource.data)))) ||
+        (isAnyApprovedOfficer() && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['totalPoints', 'totalHoursApproved', 'currentStreakWeeks', 'longestStreakWeeks', 'lastServiceDate']));
+      allow delete: if false;
+
+      match /pets/{orgId} {
+        allow read: if isOwner(uid) || isAnyApprovedOfficer();
+        allow write: if isAnyApprovedOfficer() || (isOwner(uid) && isTestAccount());
+      }
+
+      match /island/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /goals/{goalId} {
+        allow read: if isOwner(uid) || isAnyApprovedOfficer();
+        allow create, delete: if isOwner(uid);
+        allow update: if isOwner(uid) ||
+          (isAnyApprovedOfficer() && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['progressHours', 'status', 'bonusPointsAwarded', 'bonusAmount']));
+      }
+    }
+
+    match /organizations/{orgId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.submittedByUid == request.auth.uid &&
+        (request.resource.data.status == 'pending' ||
+          (request.resource.data.status == 'approved' && isTestAccount()));
+      allow update: if isAdmin() ||
+        (isApprovedOfficer(orgId) && request.resource.data.status == resource.data.status);
+      allow delete: if false;
+
+      match /members/{memberUid} {
+        allow read: if isSignedIn();
+        allow create: if (isOwner(memberUid) && (
+          (request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member') ||
+          (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'officer' && isOrgCreator(orgId)) ||
+          (request.resource.data.status == 'approved' && request.resource.data.roleInOrg == 'member' && isTestAccount())
+        )) ||
+        (isApprovedOfficer(orgId) && isOrgApproved(orgId) &&
+          memberUid != request.auth.uid &&
+          request.resource.data.uid == memberUid &&
+          request.resource.data.status == 'approved' &&
+          request.resource.data.roleInOrg == 'member' &&
+          exists(/databases/$(database)/documents/users/$(memberUid)));
+        allow update: if isApprovedOfficer(orgId) ||
+          (isOwner(memberUid) && request.resource.data.status == 'applied' && request.resource.data.roleInOrg == 'member') ||
+          (isOwner(memberUid) && isTestAccount() && resource.data.roleInOrg == 'member' &&
+            request.resource.data.roleInOrg == 'member' && request.resource.data.status == 'approved');
+        allow delete: if false;
+      }
+    }
+
+    match /{path=**}/members/{memberUid} {
+      allow read: if isSignedIn();
+    }
+
+    match /hourLogs/{logId} {
+      allow read: if isOwner(resource.data.memberUid) || isApprovedOfficer(resource.data.orgId);
+      allow create: if (isOwner(request.resource.data.memberUid) &&
+        isApprovedMember(request.resource.data.orgId) &&
+        (request.resource.data.status == 'pending' ||
+          (request.resource.data.status == 'approved' && isTestAccount()))) ||
+        (isApprovedOfficer(request.resource.data.orgId) &&
+          isOrgApproved(request.resource.data.orgId) &&
+          request.resource.data.status == 'approved' &&
+          request.resource.data.awardedByOrg == true &&
+          request.resource.data.reviewedByUid == request.auth.uid &&
+          request.resource.data.memberUid != request.auth.uid &&
+          request.resource.data.hours is number &&
+          request.resource.data.hours > 0 &&
+          request.resource.data.hours <= 24 &&
+          getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.orgId)/members/$(request.resource.data.memberUid)).data.status == 'approved' &&
+          getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.orgId)/members/$(request.resource.data.memberUid)).data.roleInOrg == 'member');
+      allow update: if
+        (isOwner(resource.data.memberUid) && resource.data.status == 'pending' && request.resource.data.status == 'pending' &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['replyImageURL', 'replyAt'])) ||
+        (isApprovedOfficer(resource.data.orgId) && resource.data.status == 'pending' && request.resource.data.status in ['approved', 'rejected']) ||
+        (isApprovedOfficer(resource.data.orgId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyImageURL', 'replyAt']));
+      allow delete: if isOwner(resource.data.memberUid) && resource.data.status == 'pending';
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.requesterUid &&
+        request.auth.uid in request.resource.data.participants &&
+        request.resource.data.participants.size() == 2 &&
+        request.resource.data.status == 'pending';
+      allow update: if isSignedIn() && request.auth.uid == resource.data.recipientUid &&
+        resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'declined'];
+      allow delete: if false;
+    }
+
+    match /bulletinPosts/{postId} {
+      allow read: if isSignedIn() &&
+        (isAdmin() || resource.data.audience == 'public' || isApprovedMember(resource.data.orgId));
+      allow create: if isOwner(request.resource.data.authorUid) &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.offersServiceHours is bool &&
+        request.resource.data.startAt is number &&
+        request.resource.data.endAt is number &&
+        request.resource.data.endAt >= request.resource.data.startAt &&
+        request.resource.data.endAt >= request.time.toMillis() &&
+        request.resource.data.approvedCount == 0 &&
+        (request.resource.data.authorType == 'member' ||
+          (request.resource.data.orgId is string && isApprovedOfficer(request.resource.data.orgId))) &&
+        (request.resource.data.audience == 'public' ||
+          (request.resource.data.audience == 'members' && request.resource.data.authorType == 'org'));
+      allow update: if (isOwner(resource.data.authorUid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount', 'status'])) ||
+        (isTestAccount() && resource.data.status == 'open' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvedCount']) &&
+          request.resource.data.approvedCount == resource.data.approvedCount + 1);
+      allow delete: if isAdmin();
+
+      match /rsvps/{rsvpUid} {
+        function post() {
+          return get(/databases/$(database)/documents/bulletinPosts/$(postId)).data;
+        }
+
+        allow read: if isSignedIn() &&
+          (isAdmin() || isOwner(rsvpUid) || isOwner(post().authorUid) || resource.data.status == 'approved');
+        allow create: if isOwner(rsvpUid) &&
+          request.resource.data.uid == rsvpUid &&
+          ((request.resource.data.status == 'pending' && request.resource.data.decidedAt == null) ||
+            (request.resource.data.status == 'approved' && request.resource.data.decidedAt is int && isTestAccount())) &&
+          post().status == 'open' &&
+          post().authorUid != rsvpUid &&
+          (post().get('audience', 'public') == 'public' || isApprovedMember(post().orgId));
+        allow update: if isOwner(post().authorUid) &&
+          request.resource.data.status in ['approved', 'declined'] &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt']);
+        allow delete: if isAdmin() ||
+          (isOwner(rsvpUid) && resource.data.status != 'approved') ||
+          isOwner(post().authorUid);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

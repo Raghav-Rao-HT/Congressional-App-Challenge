@@ -13,12 +13,24 @@ import { createGoal, subscribeMyGoals } from '../../lib/firestore/goals'
 import { subscribeApprovedOrganizations } from '../../lib/firestore/organizations'
 import type { Goal, Organization } from '../../types/models'
 
-const schema = z.object({
-  orgId: z.string(),
-  targetHours: z.coerce.number().positive('Enter hours greater than 0'),
-  periodStart: z.string().min(1, 'Choose a start date'),
-  periodEnd: z.string().min(1, 'Choose an end date'),
-})
+// Each completed goal pays a flat bonus, so tiny or numerous goals would be a points farm.
+const MIN_TARGET_HOURS = 1
+const MAX_ACTIVE_GOALS = 5
+
+const schema = z
+  .object({
+    orgId: z.string(),
+    targetHours: z.coerce
+      .number()
+      .min(MIN_TARGET_HOURS, `A goal must be at least ${MIN_TARGET_HOURS} hour`)
+      .max(1000, 'Pick a target of 1,000 hours or less'),
+    periodStart: z.string().min(1, 'Choose a start date'),
+    periodEnd: z.string().min(1, 'Choose an end date'),
+  })
+  .refine((values) => !values.periodStart || !values.periodEnd || values.periodEnd >= values.periodStart, {
+    path: ['periodEnd'],
+    message: "The end date can't be before the start date",
+  })
 
 type FormInput = z.input<typeof schema>
 type FormValues = z.output<typeof schema>
@@ -37,6 +49,7 @@ export function GoalsPage() {
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FormInput, unknown, FormValues>({ resolver: zodResolver(schema), defaultValues: { orgId: '' } })
 
@@ -49,6 +62,12 @@ export function GoalsPage() {
 
   async function onSubmit(values: FormValues) {
     if (!user) return
+    if (goals.filter((g) => g.status === 'active').length >= MAX_ACTIVE_GOALS) {
+      setError('periodEnd', {
+        message: `You can have up to ${MAX_ACTIVE_GOALS} active goals. Finish one before adding another.`,
+      })
+      return
+    }
     await createGoal({
       uid: user.uid,
       orgId: values.orgId || null,
@@ -103,7 +122,7 @@ export function GoalsPage() {
           </div>
 
           <Button type="submit" size="lg" loading={isSubmitting} className="w-full">
-            {isSubmitting ? 'Setting goal…' : 'Set goal'}
+            {isSubmitting ? 'Setting goal...' : 'Set goal'}
           </Button>
         </form>
       </Card>
@@ -147,7 +166,7 @@ export function GoalsPage() {
                     </div>
                     <p className="mt-2 text-xs text-muted">
                       {goal.periodStart} – {goal.periodEnd}
-                      {goal.bonusPointsAwarded && ` · +${goal.bonusAmount} bonus points`}
+                      {goal.bonusPointsAwarded && `, +${goal.bonusAmount} bonus points`}
                     </p>
                   </Card>
                 </li>

@@ -28,7 +28,7 @@ export function SelectWithOther({
       <Field label={label} error={selectError}>
         <Select aria-invalid={!!selectError} {...selectProps}>
           <option value="" disabled>
-            Select one…
+            Select one...
           </option>
           {options.map((option) => (
             <option key={option} value={option}>

@@ -5,6 +5,7 @@ import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminEventsPage } from './pages/admin/AdminEventsPage'
 import { AdminOrgDetailPage } from './pages/admin/AdminOrgDetailPage'
 import { AdminOrgQueuePage } from './pages/admin/AdminOrgQueuePage'
+import { AdminUsersPage } from './pages/admin/AdminUsersPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { SignupPage } from './pages/auth/SignupPage'
@@ -20,6 +21,7 @@ import { LogHoursPage } from './pages/member/LogHoursPage'
 import { MemberDashboardPage } from './pages/member/MemberDashboardPage'
 import { PetsPage } from './pages/member/PetsPage'
 import { OrgApprovalsPage } from './pages/org/OrgApprovalsPage'
+import { OrgAwardHoursPage } from './pages/org/OrgAwardHoursPage'
 import { OrgDashboardPage } from './pages/org/OrgDashboardPage'
 import { OrgMembersPage } from './pages/org/OrgMembersPage'
 import { OrgOnboardingPage } from './pages/org/OrgOnboardingPage'
@@ -66,6 +68,7 @@ export default function App() {
             <Route path="/org/onboarding" element={<OrgOnboardingPage />} />
             <Route path="/org/members" element={<OrgMembersPage />} />
             <Route path="/org/approvals" element={<OrgApprovalsPage />} />
+            <Route path="/org/award" element={<OrgAwardHoursPage />} />
           </Route>
 
           <Route element={<RequireRole accountType="admin" />}>
@@ -73,6 +76,7 @@ export default function App() {
             <Route path="/admin/orgs" element={<AdminOrgQueuePage />} />
             <Route path="/admin/orgs/:orgId" element={<AdminOrgDetailPage />} />
             <Route path="/admin/events" element={<AdminEventsPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
 
           <Route element={<RequireSiteOwner />}>

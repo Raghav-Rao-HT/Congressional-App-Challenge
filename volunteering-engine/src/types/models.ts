@@ -1,11 +1,20 @@
 export type AccountType = 'member' | 'organization_officer' | 'admin'
 
+/** Coarse age bracket captured at signup. We never store a birth date. VetWork is 13+. */
+export type AgeBand = '13-17' | '18+'
+
 export interface UserProfile {
   uid: string
-  email: string
+  /**
+   * LEGACY. Email now lives in the owner/admin-only `users/{uid}/private/contact` document (see
+   * UserContact). Profiles created before that split may still carry it until scripts/migrateEmails.mjs
+   * runs; new profiles never do, and nothing outside admin screens should read it.
+   */
+  email?: string
   displayName: string
   homeState: string
   accountType: AccountType
+  ageBand?: AgeBand
   roleBeforeAdmin?: 'member' | 'organization_officer'
   isTestAccount?: boolean
   nonprofitType?: string | null
@@ -20,6 +29,30 @@ export interface UserProfile {
   createdAt: number
   lastActiveAt: number
 }
+
+/** Private contact details: readable only by the user and admins. Stored at users/{uid}/private/contact. */
+export interface UserContact {
+  email: string
+  /** Unguessable 8-character code others use to find and friend this user (and officers use to award hours). */
+  friendCode: string
+}
+
+/** friendCodes/{code}: lets someone who ALREADY knows a code learn whose it is. Cannot be listed. */
+export interface FriendCodeEntry {
+  uid: string
+  displayName: string
+}
+
+/** joinCodes/{code}: an officer-issued code that admits the holder to the org immediately. */
+export interface JoinCode {
+  orgId: string
+  createdByUid: string
+  createdAt: number
+  active: boolean
+}
+
+/** A profile plus the email an admin may see (merged from the private contact document). */
+export type AdminUser = UserProfile & { email: string }
 
 export type OrgStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
 
@@ -41,6 +74,12 @@ export interface Organization {
   causeArea: string
   nonprofitType?: string | null
   irsClassification?: string | null
+  /** IRS Employer Identification Number, formatted NN-NNNNNNN. */
+  ein?: string | null
+  /** Set only by an admin after confirming the org is a recognized, active 501(c)(3). */
+  irsVerifiedAt?: number | null
+  irsVerifiedByUid?: string | null
+  irsVerifiedSource?: string | null
   status: OrgStatus
   submittedByUid: string
   createdAt: number
@@ -68,6 +107,8 @@ export interface OrgMember {
   approvedAt: number | null
   approvedByUid: string | null
   totalHoursApprovedForOrg: number
+  /** Set when the volunteer was admitted by presenting an officer-issued join code. */
+  joinCode?: string
 }
 
 export type HourLogStatus = 'pending' | 'approved' | 'rejected'
@@ -89,6 +130,7 @@ export interface HourLog {
   signatureURL: string | null
   pointsAwarded: number | null
   autoApproved?: boolean
+  awardedByOrg?: boolean
   replyImageURL?: string | null
   replyAt?: number | null
 }

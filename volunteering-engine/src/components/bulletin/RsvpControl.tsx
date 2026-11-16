@@ -44,10 +44,10 @@ export function RsvpControl({
           loading={busy}
           onClick={() => run(
               () => rsvpToPost({ postId, uid, displayName, autoApprove: !!profile?.isTestAccount }),
-              'Could not send your RSVP. Try again.',
+              "Couldn't send your RSVP.",
             )}
         >
-          {busy ? 'Sending…' : 'RSVP'}
+          {busy ? 'Sending...' : 'RSVP'}
         </Button>
       )}
 
@@ -55,13 +55,13 @@ export function RsvpControl({
         <>
           <Badge tone="warn">
             <Hourglass className="size-3.5" aria-hidden />
-            RSVP sent · waiting for approval
+            RSVP sent, waiting for approval
           </Badge>
           <Button
             variant="ghost"
             size="sm"
             disabled={busy}
-            onClick={() => run(() => cancelRsvp(postId, uid), 'Could not cancel your RSVP. Try again.')}
+            onClick={() => run(() => cancelRsvp(postId, uid), "Couldn't cancel your RSVP.")}
           >
             Cancel RSVP
           </Button>

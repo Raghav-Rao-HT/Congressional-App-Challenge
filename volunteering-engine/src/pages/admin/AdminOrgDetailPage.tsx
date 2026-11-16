@@ -1,6 +1,11 @@
-import { Check, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import {
+  IrsVerificationPanel,
+  IrsVerifiedNote,
+  type IrsVerificationResult,
+} from '../../components/admin/IrsVerificationPanel'
 import { Badge, type BadgeTone } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -8,7 +13,12 @@ import { Field, Input } from '../../components/ui/Field'
 import { Page, PageHeader } from '../../components/ui/Page'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useAuth } from '../../context/AuthProvider'
-import { approveOrganization, rejectOrganization, subscribeOrganization } from '../../lib/firestore/organizations'
+import {
+  approveOrganization,
+  rejectOrganization,
+  subscribeOrganization,
+  verifyApprovedOrganization,
+} from '../../lib/firestore/organizations'
 import type { Organization, OrgStatus } from '../../types/models'
 
 const statusTone: Record<OrgStatus, BadgeTone> = {
@@ -49,15 +59,34 @@ export function AdminOrgDetailPage() {
       </Page>
     )
 
-  async function handleApprove() {
+  async function handleApprove(result: IrsVerificationResult) {
     if (!user || !orgId || !org) return
     setBusy(true)
     setError(null)
     try {
-      await approveOrganization({ orgId, submittedByUid: org.submittedByUid, adminUid: user.uid })
+      await approveOrganization({
+        orgId,
+        submittedByUid: org.submittedByUid,
+        adminUid: user.uid,
+        ein: result.ein,
+        verificationSource: result.source,
+      })
       navigate('/admin/orgs')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not approve. Try again.')
+      setError(err instanceof Error ? err.message : "Couldn't approve.")
+      setBusy(false)
+    }
+  }
+
+  async function handleRecordVerification(result: IrsVerificationResult) {
+    if (!user || !orgId) return
+    setBusy(true)
+    setError(null)
+    try {
+      await verifyApprovedOrganization({ orgId, adminUid: user.uid, ein: result.ein, verificationSource: result.source })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't record the verification.")
+    } finally {
       setBusy(false)
     }
   }
@@ -70,7 +99,7 @@ export function AdminOrgDetailPage() {
       await rejectOrganization({ orgId, adminUid: user.uid, reason: reason || 'Not specified' })
       navigate('/admin/orgs')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not reject. Try again.')
+      setError(err instanceof Error ? err.message : "Couldn't reject.")
       setBusy(false)
     }
   }
@@ -91,8 +120,9 @@ export function AdminOrgDetailPage() {
       <Card className="p-6">
         <dl className="grid gap-5 sm:grid-cols-2">
           <Detail label="Legal name">{org.legalName}</Detail>
-          <Detail label="Nonprofit type">{org.nonprofitType ?? '—'}</Detail>
-          <Detail label="IRS classification">{org.irsClassification ?? '—'}</Detail>
+          <Detail label="EIN">{org.ein ?? 'Not provided'}</Detail>
+          <Detail label="Nonprofit type">{org.nonprofitType ?? 'None'}</Detail>
+          <Detail label="IRS classification">{org.irsClassification ?? 'None'}</Detail>
           <Detail label="Cause area">{org.causeArea}</Detail>
           <Detail label="Address">
             {org.address.street}, {org.address.city}, {org.address.state} {org.address.zip}
@@ -108,28 +138,32 @@ export function AdminOrgDetailPage() {
         </dl>
       </Card>
 
+      {org.irsVerifiedAt && <IrsVerifiedNote org={org} />}
+
+      {(org.status === 'pending' || org.status === 'rejected') && (
+        <IrsVerificationPanel org={org} mode="approve" busy={busy} onConfirm={handleApprove} />
+      )}
+
+      {org.status === 'approved' && !org.irsVerifiedAt && (
+        <IrsVerificationPanel org={org} mode="record" busy={busy} onConfirm={handleRecordVerification} />
+      )}
+
+      {error && (
+        <p role="alert" className="mt-6 rounded-xl bg-bad-soft px-4 py-3 text-sm font-medium text-bad">
+          {error}
+        </p>
+      )}
+
       {(org.status === 'pending' || org.status === 'rejected') && (
         <Card className="mt-6 space-y-5 p-6">
-          <Field label="Rejection reason" hint="Only needed if you're rejecting.">
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          <Field label="Rejection reason" hint="Only needed if you're rejecting (at most 300 characters).">
+            <Input maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>
 
-          {error && (
-            <p role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm font-medium text-bad">
-              {error}
-            </p>
-          )}
-
-          <div className="flex flex-wrap gap-3">
-            <Button variant="success" size="lg" loading={busy} onClick={handleApprove}>
-              <Check className="size-5" aria-hidden />
-              Approve
-            </Button>
-            <Button variant="danger" size="lg" disabled={busy} onClick={handleReject}>
-              <X className="size-5" aria-hidden />
-              Reject
-            </Button>
-          </div>
+          <Button variant="danger" size="lg" disabled={busy} onClick={handleReject}>
+            <X className="size-5" aria-hidden />
+            Reject
+          </Button>
         </Card>
       )}
     </Page>

@@ -44,7 +44,7 @@ export function LeaderboardPage() {
       setAdminError(
         (err as { code?: string }).code === 'permission-denied'
           ? 'Firestore refused this change. The latest security rules must be deployed, and this account needs the admin permission.'
-          : 'Could not update the leaderboard. Try again.',
+          : "Couldn't update the leaderboard.",
       )
     } finally {
       setBusyUid(null)

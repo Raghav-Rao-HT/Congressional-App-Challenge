@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, sendEmailVerification, type UserCredential } from 'firebase/auth'
 import { Building2, HandHeart, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -20,12 +20,41 @@ import {
 } from '../../lib/nonprofitTypes'
 import { homePathFor } from '../../lib/roles'
 
+const MIN_AGE = 13
+const AGE_BLOCK_KEY = 'vetwork.ageBlocked'
+
+function ageBlocked(): boolean {
+  try {
+    return localStorage.getItem(AGE_BLOCK_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function rememberAgeBlock() {
+  try {
+    localStorage.setItem(AGE_BLOCK_KEY, '1')
+  } catch {
+    return
+  }
+}
+
+function signupErrorMessage(err: unknown): string {
+  const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : ''
+  if (code === 'auth/weak-password') return 'Choose a stronger password (at least 10 characters).'
+  if (code === 'auth/network-request-failed') return 'Network problem. Check your connection and try again.'
+  if (code === 'auth/too-many-requests') return 'Too many attempts. Please wait a few minutes and try again.'
+  // Deliberately vague: do not reveal whether an email address already has an account.
+  return "We couldn't create your account. If you already have one, log in or reset your password."
+}
+
 const schema = z
   .object({
-    displayName: z.string().min(2, 'Enter your name or organization contact name'),
-    homeState: z.string().min(2, 'Enter your state'),
-    email: z.string().email(),
-    password: z.string().min(8, 'At least 8 characters'),
+    displayName: z.string().trim().min(2, 'Enter your name or organization contact name').max(80, 'At most 80 characters'),
+    homeState: z.string().trim().min(2, 'Enter your state').max(40, 'At most 40 characters'),
+    email: z.string().email().max(254),
+    password: z.string().min(10, 'At least 10 characters').max(128),
+    birthYear: z.string().regex(/^(19|20)\d{2}$/, 'Enter a 4-digit year, e.g. 2009'),
     accountType: z.enum(['member', 'organization_officer']),
     nonprofitType: z.string(),
     nonprofitTypeOther: z.string(),
@@ -79,22 +108,37 @@ export function SignupPage() {
 
   async function onSubmit(values: FormValues) {
     setError(null)
+
+    // Neutral age screen: ask for a birth year, don't hint at the cut-off, and don't let a back-button
+    // retry with a different year. Only a coarse bracket is stored, never the birth year itself.
+    const age = new Date().getFullYear() - Number(values.birthYear)
+    if (ageBlocked() || age < MIN_AGE) {
+      rememberAgeBlock()
+      setError("We're unable to create an account for you.")
+      return
+    }
+
+    let credential: UserCredential | undefined
     try {
-      const credential = await createUserWithEmailAndPassword(auth, values.email, values.password)
+      credential = await createUserWithEmailAndPassword(auth, values.email, values.password)
       await createUserProfile({
         uid: credential.user.uid,
         email: values.email,
         displayName: values.displayName,
         homeState: values.homeState,
         accountType: values.accountType,
+        ageBand: age >= 18 ? '18+' : '13-17',
         ...(values.accountType === 'organization_officer' && {
           nonprofitType: resolveChoice(values.nonprofitType, values.nonprofitTypeOther),
           irsClassification: resolveChoice(values.irsClassification, values.irsClassificationOther),
         }),
       })
+      sendEmailVerification(credential.user).catch(() => undefined)
       navigate(homePathFor(values.accountType))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Try again.')
+      // Don't strand a half-created account (a login with no profile): remove it so signing up can simply be retried.
+      if (credential) await credential.user.delete().catch(() => undefined)
+      setError(signupErrorMessage(err))
     }
   }
 
@@ -180,7 +224,22 @@ export function SignupPage() {
           <Input type="email" autoComplete="email" aria-invalid={!!errors.email} {...register('email')} />
         </Field>
 
-        <Field label="Password" hint="At least 8 characters." error={errors.password?.message}>
+        <Field
+          label="Year of birth"
+          hint="Used only to confirm you're old enough. We don't store it."
+          error={errors.birthYear?.message}
+        >
+          <Input
+            inputMode="numeric"
+            autoComplete="bday-year"
+            maxLength={4}
+            placeholder="e.g. 2009"
+            aria-invalid={!!errors.birthYear}
+            {...register('birthYear')}
+          />
+        </Field>
+
+        <Field label="Password" hint="At least 10 characters." error={errors.password?.message}>
           <Input
             type="password"
             autoComplete="new-password"
@@ -196,7 +255,7 @@ export function SignupPage() {
         )}
 
         <Button type="submit" size="lg" loading={isSubmitting} className="w-full">
-          {isSubmitting ? 'Creating account…' : 'Sign up'}
+          {isSubmitting ? 'Creating account...' : 'Sign up'}
         </Button>
       </form>
     </AuthLayout>

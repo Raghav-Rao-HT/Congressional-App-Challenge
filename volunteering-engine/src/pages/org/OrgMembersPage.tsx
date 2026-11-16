@@ -1,5 +1,6 @@
 import { Check, UserCheck, UserPlus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { JoinCodeCard } from '../../components/org/JoinCodeCard'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -39,6 +40,12 @@ export function OrgMembersPage() {
   return (
     <Page width="narrow">
       <PageHeader title="Members" description="Approve people who want to join, and see your roster." back={{ to: '/org', label: 'Dashboard' }} />
+
+      {org.status === 'approved' && (
+        <div className="mb-6">
+          <JoinCodeCard orgId={org.orgId} />
+        </div>
+      )}
 
       <Section title={`Applications${applications.length ? ` (${applications.length})` : ''}`}>
         {applications.length === 0 ? (

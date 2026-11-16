@@ -79,7 +79,7 @@ export function LoginPage() {
         )}
 
         <Button type="submit" size="lg" loading={isSubmitting} className="w-full">
-          {isSubmitting ? 'Logging in…' : 'Log in'}
+          {isSubmitting ? 'Logging in...' : 'Log in'}
         </Button>
       </form>
     </AuthLayout>

@@ -38,5 +38,10 @@ export function useOrgApplications() {
     }
   }
 
-  return { applications, applyingTo, apply, loadState }
+  /** Reflect a membership that was created elsewhere (e.g. by redeeming a join code) without a reload. */
+  function markApproved(orgId: string) {
+    setApplications((prev) => ({ ...prev, [orgId]: 'approved' }))
+  }
+
+  return { applications, applyingTo, apply, loadState, markApproved }
 }

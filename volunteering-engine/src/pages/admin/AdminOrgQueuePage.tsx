@@ -30,7 +30,7 @@ export function AdminOrgQueuePage() {
     <Page width="narrow">
       <PageHeader
         title="Verify organizations"
-        description="Review each submission, then approve it to make it available to members or reject it with a reason."
+        description="Review each submission, then approve it or reject it with a reason."
         back={{ to: '/admin', label: 'Admin' }}
       />
 
@@ -51,7 +51,7 @@ export function AdminOrgQueuePage() {
                     <p className="truncate text-sm text-muted">
                       {[`${org.address.city}, ${org.address.state}`, org.nonprofitType, org.causeArea]
                         .filter(Boolean)
-                        .join(' · ')}
+                        .join(', ')}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

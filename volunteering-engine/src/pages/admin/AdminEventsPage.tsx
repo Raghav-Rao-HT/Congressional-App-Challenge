@@ -42,7 +42,7 @@ export function AdminEventsPage() {
       await deleteBulletinPost(postId)
       setConfirmingId(null)
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Could not delete the event. Try again.')
+      setDeleteError(err instanceof Error ? err.message : "Couldn't delete the event.")
     } finally {
       setBusyId(null)
     }
@@ -77,7 +77,7 @@ export function AdminEventsPage() {
       )}
 
       {loadError ? null : posts === null ? (
-        <p className="mt-6 text-sm text-muted">Loading events…</p>
+        <p className="mt-6 text-sm text-muted">Loading events...</p>
       ) : shown.length === 0 ? (
         <div className="mt-6">
           <EmptyState icon={Megaphone} title={tab === 'upcoming' ? 'No upcoming events' : 'No past events'} />

@@ -10,6 +10,7 @@ import { Card } from '../../components/ui/Card'
 import { Field, Input } from '../../components/ui/Field'
 import { Page, PageHeader } from '../../components/ui/Page'
 import { useAuth } from '../../context/AuthProvider'
+import { normalizeEin } from '../../lib/ein'
 import { createOrganization } from '../../lib/firestore/organizations'
 import { geocodeAddress } from '../../lib/geocode'
 import {
@@ -20,20 +21,22 @@ import {
 } from '../../lib/nonprofitTypes'
 
 const schema = z.object({
-  name: z.string().min(2, 'Enter your organization name'),
-  legalName: z.string().min(2, 'Enter your legal/registered name'),
-  street: z.string().min(2, 'Enter a street address'),
-  city: z.string().min(1, 'Enter a city'),
-  state: z.string().min(2, 'Enter a state'),
-  zip: z.string().min(3, 'Enter a ZIP code'),
-  contactEmail: z.string().email(),
-  contactPhone: z.string().min(7, 'Enter a phone number'),
+  name: z.string().trim().min(2, 'Enter your organization name').max(120, 'At most 120 characters'),
+  legalName: z.string().trim().min(2, 'Enter your legal/registered name').max(160, 'At most 160 characters'),
+  ein: z.string().refine((value) => normalizeEin(value) !== null, 'Enter your 9-digit EIN, e.g. 12-3456789'),
+  street: z.string().trim().min(2, 'Enter a street address').max(160, 'At most 160 characters'),
+  city: z.string().trim().min(1, 'Enter a city').max(80, 'At most 80 characters'),
+  state: z.string().trim().min(2, 'Enter a state').max(40, 'At most 40 characters'),
+  zip: z.string().trim().min(3, 'Enter a ZIP code').max(12, 'At most 12 characters'),
+  contactEmail: z.string().email().max(120, 'At most 120 characters'),
+  contactPhone: z.string().min(7, 'Enter a phone number').max(30, 'At most 30 characters'),
   website: z
     .string()
+    .max(200, 'At most 200 characters')
     .url('Enter a full URL, e.g. https://example.org')
     .refine((value) => /^https?:\/\//i.test(value), 'The URL must start with http:// or https://')
     .or(z.literal('')),
-  causeArea: z.string().min(2, 'Enter a cause area, e.g. Food Security'),
+  causeArea: z.string().trim().min(2, 'Enter a cause area, e.g. Food Security').max(80, 'At most 80 characters'),
   nonprofitType: z.string(),
   nonprofitTypeOther: z.string(),
   irsClassification: z.string(),
@@ -94,11 +97,12 @@ export function OrgOnboardingPage() {
         causeArea: values.causeArea,
         nonprofitType: profile.nonprofitType ?? resolveChoice(values.nonprofitType, values.nonprofitTypeOther),
         irsClassification: profile.irsClassification ?? resolveChoice(values.irsClassification, values.irsClassificationOther),
+        ein: normalizeEin(values.ein) as string,
         autoApprove: !!profile.isTestAccount,
       })
       navigate('/org')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not submit your organization. Try again.')
+      setError(err instanceof Error ? err.message : "Couldn't submit your organization.")
     }
   }
 
@@ -106,7 +110,7 @@ export function OrgOnboardingPage() {
     <Page width="narrow">
       <PageHeader
         title="Register your organization"
-        description="Submitted organizations are reviewed by an admin before members can log hours against them."
+        description="An admin reviews your organization before members can log hours with it."
       />
 
       <form className="space-y-6" onSubmit={handleSubmit(onSubmit)} noValidate>
@@ -117,6 +121,13 @@ export function OrgOnboardingPage() {
           </Field>
           <Field label="Legal / registered name" error={errors.legalName?.message}>
             <Input aria-invalid={!!errors.legalName} {...register('legalName')} />
+          </Field>
+          <Field
+            label="EIN (Employer Identification Number)"
+            hint="Only IRS-recognized 501(c)(3) nonprofits can be approved. An admin checks this number against IRS records."
+            error={errors.ein?.message}
+          >
+            <Input inputMode="numeric" placeholder="12-3456789" aria-invalid={!!errors.ein} {...register('ein')} />
           </Field>
           <Field label="Cause area" error={errors.causeArea?.message}>
             <Input placeholder="e.g. Food Security" aria-invalid={!!errors.causeArea} {...register('causeArea')} />
@@ -195,7 +206,7 @@ export function OrgOnboardingPage() {
         )}
 
         <Button type="submit" size="lg" loading={isSubmitting} className="w-full">
-          {isSubmitting ? 'Locating address and submitting…' : 'Submit for approval'}
+          {isSubmitting ? 'Locating address and submitting...' : 'Submit for approval'}
         </Button>
       </form>
     </Page>

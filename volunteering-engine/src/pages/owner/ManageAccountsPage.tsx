@@ -1,6 +1,6 @@
 import { FlaskConical, Search, ShieldCheck, Users } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Badge, type BadgeTone } from '../../components/ui/Badge'
+import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Field'
@@ -8,20 +8,9 @@ import { EmptyState, Page, PageHeader } from '../../components/ui/Page'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useAllUsers } from '../../hooks/useAllUsers'
 import { makeAdmin, removeAdmin, setTestAccount } from '../../lib/firestore/users'
+import { roleBadge } from '../../lib/roleBadge'
 import { isSiteOwner } from '../../lib/roles'
 import type { UserProfile } from '../../types/models'
-
-function roleOf(user: UserProfile): { label: string; tone: BadgeTone } {
-  if (isSiteOwner(user.uid)) return { label: 'Owner', tone: 'violet' }
-  switch (user.accountType) {
-    case 'admin':
-      return { label: 'Admin', tone: 'brand' }
-    case 'organization_officer':
-      return { label: 'Organization', tone: 'neutral' }
-    default:
-      return { label: 'Volunteer', tone: 'neutral' }
-  }
-}
 
 function rank(user: UserProfile): number {
   if (isSiteOwner(user.uid)) return 0
@@ -46,47 +35,41 @@ export function ManageAccountsPage() {
     : sorted
   const adminCount = sorted.filter((user) => user.accountType === 'admin').length
 
-  async function toggleTest(user: UserProfile) {
-    const makeTest = !user.isTestAccount
+  async function run(user: UserProfile, action: () => Promise<void>, done: string) {
     setBusy(user.uid)
     setError(null)
     setNotice(null)
     try {
-      await setTestAccount(user.uid, makeTest)
-      setNotice(
-        makeTest
-          ? `${user.email} is now a test account. What it asks for is approved automatically.`
-          : `${user.email} is no longer a test account.`,
-      )
+      await action()
+      setConfirming(null)
+      setNotice(done)
     } catch (err) {
-      console.error('Could not change the test account setting:', err)
-      setError('Could not save that change. Try again.')
+      console.error(err)
+      setError("Couldn't save that change.")
     } finally {
       setBusy(null)
     }
   }
 
-  async function change(user: UserProfile, becomeAdmin: boolean) {
-    setBusy(user.uid)
-    setError(null)
-    setNotice(null)
-    try {
-      await (becomeAdmin ? makeAdmin(user) : removeAdmin(user))
-      setConfirming(null)
-      setNotice(becomeAdmin ? `${user.email} is now an admin.` : `${user.email} is no longer an admin.`)
-    } catch (err) {
-      console.error('Could not change the account type:', err)
-      setError('Could not save that change. Try again.')
-    } finally {
-      setBusy(null)
-    }
-  }
+  const toggleTest = (user: UserProfile) =>
+    run(
+      user,
+      () => setTestAccount(user.uid, !user.isTestAccount),
+      `${user.email} ${user.isTestAccount ? 'is no longer' : 'is now'} a test account.`,
+    )
+
+  const changeAdmin = (user: UserProfile, becomeAdmin: boolean) =>
+    run(
+      user,
+      () => (becomeAdmin ? makeAdmin(user) : removeAdmin(user)),
+      `${user.email} ${becomeAdmin ? 'is now' : 'is no longer'} an admin.`,
+    )
 
   return (
     <Page width="narrow">
       <PageHeader
         title="Accounts"
-        description="Everyone registered on VetWork. Make someone an admin and they can do everything you can, except choose other admins. A test account has what it asks for approved automatically: hours, joining organizations and events, registering an organization."
+        description="Everyone who has registered. Admins can do everything you can except choose other admins. Test accounts get everything they ask for approved automatically."
         back={{ to: '/admin', label: 'Admin' }}
       />
 
@@ -104,7 +87,7 @@ export function ManageAccountsPage() {
 
       {users && (
         <p className="mt-3 text-sm text-muted">
-          {users.length} registered · {adminCount} admin{adminCount === 1 ? '' : 's'}
+          {users.length} registered, {adminCount} admin{adminCount === 1 ? '' : 's'}
         </p>
       )}
 
@@ -132,7 +115,7 @@ export function ManageAccountsPage() {
       ) : (
         <ul className="mt-5 space-y-3">
           {shown.map((user) => {
-            const role = roleOf(user)
+            const role = roleBadge(user)
             const owner = isSiteOwner(user.uid)
             const isAdmin = user.accountType === 'admin'
             const asking = confirming === user.uid
@@ -186,15 +169,15 @@ export function ManageAccountsPage() {
                     <div className="mt-4 rounded-2xl bg-surface-2 p-4">
                       <p className="text-sm text-fg">
                         {isAdmin
-                          ? `Take admin access away from ${user.email}? They go back to being ${user.roleBeforeAdmin === 'organization_officer' ? 'an organization' : 'a volunteer'}.`
-                          : `Make ${user.email} an admin? They will be able to verify organizations, manage every event and hide people from the leaderboard.`}
+                          ? `Remove admin access from ${user.email}? They go back to being ${user.roleBeforeAdmin === 'organization_officer' ? 'an organization' : 'a volunteer'}.`
+                          : `Make ${user.email} an admin? They'll be able to verify organizations, manage events and hide people from the leaderboard.`}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           size="sm"
                           variant={isAdmin ? 'danger' : 'primary'}
                           loading={busy === user.uid}
-                          onClick={() => change(user, !isAdmin)}
+                          onClick={() => changeAdmin(user, !isAdmin)}
                         >
                           {isAdmin ? 'Yes, remove admin' : 'Yes, make admin'}
                         </Button>

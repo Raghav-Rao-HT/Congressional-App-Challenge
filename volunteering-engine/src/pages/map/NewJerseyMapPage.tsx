@@ -109,7 +109,7 @@ function OrgPopup({
             <>
               <div className="text-sm font-semibold text-fg">Want to volunteer with {org.name}?</div>
               <Button className="mt-3 w-full" loading={joining} onClick={onJoin}>
-                {joining ? 'Joining…' : 'Join this organization'}
+                {joining ? 'Joining...' : 'Join this organization'}
               </Button>
             </>
           )}

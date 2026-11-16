@@ -22,7 +22,7 @@ export function PetsPage() {
     <Page>
       <PageHeader
         title="Your pets"
-        description={`When you log hours you choose which pet they go to. Each pet changes its look at ${PET_STAGE_THRESHOLDS.slice(1).join(', ')} hours. Click a pet to paint it, dress it up or give it something to hold. Some looks unlock as you give more service hours.`}
+        description={`Hours go to the pet you pick when you log them. Each pet changes look at ${PET_STAGE_THRESHOLDS.slice(1).join(', ')} hours. Click a pet to customise it. Some looks unlock with more service hours.`}
       />
 
       {error && (

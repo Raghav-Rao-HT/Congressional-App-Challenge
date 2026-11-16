@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '../../lib/cn'
+import { isSafeImageSrc } from '../../lib/safeImage'
 
 export function ImageViewer({ src, label, onClose }: { src: string; label: string; onClose: () => void }) {
   useEffect(() => {
@@ -31,7 +32,9 @@ export function ImageViewer({ src, label, onClose }: { src: string; label: strin
         >
           <X className="size-5" aria-hidden />
         </button>
-        <img src={src} alt={label} className="max-h-[85vh] max-w-full rounded-2xl bg-white object-contain shadow-lift" />
+        {isSafeImageSrc(src) && (
+          <img src={src} alt={label} className="max-h-[85vh] max-w-full rounded-2xl bg-white object-contain shadow-lift" />
+        )}
         <p className="mt-2 text-center text-sm font-medium text-white">{label}</p>
       </div>
     </div>
@@ -40,6 +43,9 @@ export function ImageViewer({ src, label, onClose }: { src: string; label: strin
 
 export function ImageThumb({ src, label, className }: { src: string; label: string; className?: string }) {
   const [open, setOpen] = useState(false)
+  if (!isSafeImageSrc(src)) {
+    return <p className="text-xs italic text-muted">{label} unavailable</p>
+  }
   return (
     <>
       <button

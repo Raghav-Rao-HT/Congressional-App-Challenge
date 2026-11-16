@@ -1,4 +1,4 @@
-import { CalendarDays, ShieldCheck, UserCog } from 'lucide-react'
+import { CalendarDays, ShieldCheck, UserCog, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ActionCard } from '../../components/ui/ActionCard'
 import { Page, PageHeader } from '../../components/ui/Page'
@@ -17,7 +17,7 @@ export function AdminDashboardPage() {
         title="Admin"
         description={
           pendingCount === null
-            ? 'Checking for organizations to verify…'
+            ? 'Checking for organizations to verify...'
             : pendingCount === 0
               ? 'No organizations are waiting for verification.'
               : `${pendingCount} organization${pendingCount === 1 ? ' is' : 's are'} waiting for verification.`
@@ -29,6 +29,9 @@ export function AdminDashboardPage() {
         </ActionCard>
         <ActionCard to="/admin/events" icon={CalendarDays} title="Manage events">
           Review every event and remove ones that shouldn’t be posted.
+        </ActionCard>
+        <ActionCard to="/admin/users" icon={Users} title="Users">
+          See how many people have signed up, with everyone's details.
         </ActionCard>
         {isSiteOwner && (
           <ActionCard to="/owner/accounts" icon={UserCog} title="Manage accounts">

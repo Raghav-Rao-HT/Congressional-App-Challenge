@@ -43,7 +43,7 @@ function ApprovalRow({ log, reviewerUid, orgId }: { log: HourLog; reviewerUid: s
         signatureDataUrl: dataUrl,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not approve. Try again.')
+      setError(err instanceof Error ? err.message : "Couldn't approve.")
       setBusy(false)
     }
   }
@@ -53,7 +53,7 @@ function ApprovalRow({ log, reviewerUid, orgId }: { log: HourLog; reviewerUid: s
     try {
       await rejectHourLog({ logId: log.logId, reviewerUid, reason: 'Rejected by organization' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not reject. Try again.')
+      setError(err instanceof Error ? err.message : "Couldn't reject.")
       setBusy(false)
     }
   }
@@ -111,9 +111,12 @@ function ReviewedRow({ log }: { log: HourLog }) {
           </p>
           <p className="mt-1 text-muted">{log.description}</p>
         </div>
-        <Badge tone={log.status === 'approved' ? 'ok' : 'bad'} className="capitalize">
-          {log.status}
-        </Badge>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          {log.awardedByOrg && <Badge tone="violet">Awarded</Badge>}
+          <Badge tone={log.status === 'approved' ? 'ok' : 'bad'} className="capitalize">
+            {log.status}
+          </Badge>
+        </div>
       </div>
       {log.attachmentURLs.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-3">
