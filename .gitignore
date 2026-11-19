@@ -27,3 +27,6 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 storage-debug.log
+
+# Vercel CLI link metadata (project/org ids)
+.vercel/
