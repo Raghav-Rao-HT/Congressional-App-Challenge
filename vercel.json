@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "cd volunteering-engine && npm ci",
-  "buildCommand": "cd volunteering-engine && npm run build",
-  "outputDirectory": "volunteering-engine/dist",
+  "installCommand": "cd test && npm ci",
+  "buildCommand": "cd test && npm run build",
+  "outputDirectory": "test/dist",
   "rewrites": [
     {
       "source": "/(.*)",
