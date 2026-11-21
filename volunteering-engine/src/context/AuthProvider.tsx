@@ -9,6 +9,7 @@ interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
   loading: boolean
+  profileError: boolean
   isSiteOwner: boolean
   canSwitchView: boolean
   adminView: boolean
@@ -32,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [savedProfile, setProfile] = useState<UserProfile | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [profileChecked, setProfileChecked] = useState(false)
+  const [profileError, setProfileError] = useState(false)
   const [adminView, setAdminViewState] = useState(readAdminView)
 
   useEffect(() => {
@@ -42,16 +44,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    setProfileError(false)
     if (!user) {
       setProfile(null)
       setProfileChecked(false)
       return
     }
     setProfileChecked(false)
-    return onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
-      setProfile(snapshot.exists() ? (snapshot.data() as UserProfile) : null)
-      setProfileChecked(true)
-    })
+    return onSnapshot(
+      doc(db, 'users', user.uid),
+      (snapshot) => {
+        setProfile(snapshot.exists() ? (snapshot.data() as UserProfile) : null)
+        setProfileChecked(true)
+      },
+      (error) => {
+        // Without this, a refused read left `loading` true forever and the page rendered nothing at all.
+        console.error('Could not load your profile:', error)
+        setProfile(null)
+        setProfileError(true)
+        setProfileChecked(true)
+      },
+    )
   }, [user])
 
   const owner = isSiteOwner(user?.uid)
@@ -85,7 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loading = authLoading || (user !== null && !profileChecked)
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isSiteOwner: owner, canSwitchView, adminView, setAdminView }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, profile, loading, profileError, isSiteOwner: owner, canSwitchView, adminView, setAdminView }}>
+      {children}
+    </AuthContext.Provider>
   )
 }
 

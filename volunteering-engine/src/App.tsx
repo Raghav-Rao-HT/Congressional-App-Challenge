@@ -1,6 +1,9 @@
+import { signOut } from 'firebase/auth'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { NavBar } from './components/layout/NavBar'
+import { Button } from './components/ui/Button'
 import { useAuth } from './context/AuthProvider'
+import { auth } from './lib/firebase'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminEventsPage } from './pages/admin/AdminEventsPage'
 import { AdminOrgDetailPage } from './pages/admin/AdminOrgDetailPage'
@@ -30,11 +33,27 @@ import { RequireRole } from './routes/RequireRole'
 import { RequireSiteOwner } from './routes/RequireSiteOwner'
 import { homePathFor } from './lib/roles'
 
+function ProfileProblem({ refused }: { refused: boolean }) {
+  return (
+    <main className="mx-auto max-w-md px-4 py-16 text-center">
+      <h1 className="text-xl font-semibold text-fg">We couldn't load your profile</h1>
+      <p className="mt-3 text-sm text-muted">
+        {refused
+          ? 'The database refused the request. This usually means the site is not fully set up yet. Please try again later or contact the site owner.'
+          : "You're signed in, but there is no profile saved for this account."}
+      </p>
+      <Button className="mt-6" onClick={() => void signOut(auth)}>
+        Log out
+      </Button>
+    </main>
+  )
+}
+
 function HomeRedirect() {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, loading, profileError } = useAuth()
   if (loading) return null
   if (!user) return <Navigate to="/login" replace />
-  if (!profile) return null
+  if (!profile) return <ProfileProblem refused={profileError} />
   return <Navigate to={homePathFor(profile.accountType)} replace />
 }
 
